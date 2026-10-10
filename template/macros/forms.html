@@ -1,0 +1,22 @@
+{% macro field(f, class="") %}
+  <div class="field {{ 'has-error' if f.errors }} {{ class }}">
+    <label for="{{ f.id_for_label }}" class="mb-1.5 block text-sm font-medium text-gray-700">
+      {{ f.label }}{% if f.field.required %}<span class="text-red-500" aria-hidden="true"> *</span>{% endif %}
+    </label>
+    {{ f }}
+    {% if f.help_text %}
+      <p class="mt-1 text-xs text-gray-500">{{ f.help_text|safe }}</p>
+    {% endif %}
+    {% for error in f.errors %}
+      <p class="mt-1 text-xs font-medium text-red-600">{{ error }}</p>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% macro non_field_errors(form) %}
+  {% if form.non_field_errors() %}
+    <div class="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-800 ring-1 ring-red-200" role="alert">
+      {% for error in form.non_field_errors() %}<p>{{ error }}</p>{% endfor %}
+    </div>
+  {% endif %}
+{% endmacro %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}My orders{% endblock %}
+
+{% block content %}
+<div class="container-page max-w-4xl py-10">
+  <h1 class="text-3xl font-bold tracking-tight">My orders</h1>
+
+  {% set status_tone = {
+    'pending': 'bg-amber-100 text-amber-800',
+    'processing': 'bg-blue-100 text-blue-800',
+    'shipped': 'bg-indigo-100 text-indigo-800',
+    'delivered': 'bg-green-100 text-green-800',
+    'cancelled': 'bg-gray-200 text-gray-700',
+  } %}
+
+  {% if orders %}
+    <ul class="mt-8 space-y-4">
+      {% for order in orders %}
+        <li>
+          <a href="{{ order.get_absolute_url() }}" class="card flex flex-col gap-2 p-5 transition hover:shadow-md sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p class="font-semibold">#{{ order.reference }}</p>
+              <p class="text-sm text-gray-500">
+                {{ order.created_at|localtime }} · {{ order.items.all()|length }} item{{ 's' if order.items.all()|length != 1 }}
+              </p>
+            </div>
+            <div class="flex items-center gap-4">
+              <span class="badge {{ status_tone.get(order.status, '') }}">{{ order.get_status_display() }}</span>
+              <span class="font-semibold">{{ order.total|money }}</span>
+            </div>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="card mt-8 p-12 text-center">
+      <p class="font-medium">You haven't placed any orders yet.</p>
+      <a href="{{ url('catalog:product_list') }}" class="btn btn-primary mt-6">Start shopping</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% import "macros/product.html" as p %}
+{% import "macros/reviews.html" as r %}
+
+{% block title %}{{ product.name }}{% endblock %}
+{% block meta_description %}{{ (product.summary or product.description)|truncate(150) }}{% endblock %}
+
+{% block content %}
+<div class="container-page py-10">
+  <nav class="text-sm text-gray-500" aria-label="Breadcrumb">
+    <a href="{{ url('core:home') }}" class="hover:text-gray-700">Home</a>
+    <span class="mx-1">/</span>
+    <a href="{{ product.category.get_absolute_url() }}" class="hover:text-gray-700">{{ product.category.name }}</a>
+    <span class="mx-1">/</span>
+    <span class="text-gray-700">{{ product.name }}</span>
+  </nav>
+
+  <div class="mt-6 grid gap-10 md:grid-cols-2">
+    <div>{{ p.gallery(product) }}</div>
+
+    <div class="flex flex-col">
+      <p class="text-sm font-medium tracking-wide text-brand-600 uppercase">{{ product.category.name }}</p>
+      <h1 class="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">{{ product.name }}</h1>
+      <a href="#reviews" class="mt-3 inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900">
+        {% if rating.count %}
+          {{ r.stars(rating.average) }}
+          <span class="font-medium text-gray-900">{{ '%.1f'|format(rating.average) }}</span>
+          <span class="underline-offset-2 hover:underline">{{ rating.count }} review{{ 's' if rating.count != 1 }}</span>
+        {% else %}
+          {{ r.stars(0) }}<span class="underline-offset-2 hover:underline">No reviews yet</span>
+        {% endif %}
+      </a>
+
+      <div class="mt-4 flex items-center gap-3">
+        {{ p.price(product, size="text-2xl") }}
+        {% if product.on_sale %}<span class="badge bg-rose-100 text-rose-700">Save {{ product.discount_percent }}%</span>{% endif %}
+      </div>
+
+      <p class="mt-4 text-sm font-medium {{ 'text-green-700' if product.in_stock else 'text-red-600' }}">
+        {% if product.stock > 10 %}In stock
+        {% elif product.in_stock %}Only {{ product.stock }} left
+        {% else %}Out of stock{% endif %}
+      </p>
+
+      {% set summary = product.summary or (product.description_paragraphs[0]|truncate(220) if product.description) %}
+      {% if summary %}
+        <p class="mt-6 leading-relaxed text-gray-700">{{ summary }}</p>
+      {% endif %}
+      {% if product.spec_groups %}
+        <a href="#specifications" class="btn-link mt-3 inline-block">View full specifications &darr;</a>
+      {% elif product.description %}
+        <a href="#description" class="btn-link mt-3 inline-block">Read full description &darr;</a>
+      {% endif %}
+
+      <form action="{{ url('cart:add', product.pk) }}" method="post" class="mt-8 flex items-end gap-3">
+        {{ csrf_input }}
+        <input type="hidden" name="next" value="{{ request.path }}">
+        <div>
+          <label for="quantity" class="mb-1.5 block text-sm font-medium text-gray-700">Quantity</label>
+          <input id="quantity" type="number" name="quantity" value="1" min="1" max="{{ product.stock or 1 }}"
+                 class="input w-24" {{ 'disabled' if not product.in_stock }}>
+        </div>
+        <button type="submit" class="btn btn-primary flex-1 py-3 sm:flex-none sm:px-8" {{ 'disabled' if not product.in_stock }}>
+          {{ 'Add to cart' if product.in_stock else 'Sold out' }}
+        </button>
+      </form>
+
+      <ul class="mt-8 space-y-2 border-t border-gray-200 pt-6 text-sm text-gray-600">
+        <li>🚚 Free shipping on orders over {{ settings.FREE_SHIPPING_THRESHOLD|money }}</li>
+        <li>💵 Pay cash on delivery</li>
+        <li>↩️ 30-day returns</li>
+      </ul>
+    </div>
+  </div>
+
+  {% set has_description = product.description_paragraphs|length > 0 %}
+  {% set has_specs = product.spec_groups|length > 0 %}
+  {% if has_description or has_specs %}
+    <section id="details" class="mt-16 scroll-mt-24 border-t border-gray-200 pt-12" aria-label="Product details">
+      <div class="grid gap-10 {{ 'lg:grid-cols-5' if has_description and has_specs }}">
+        {% if has_description %}
+          <div id="description" class="scroll-mt-24 {{ 'lg:col-span-3' if has_specs }}">
+            <h2 class="text-2xl font-bold tracking-tight">Description</h2>
+            <div class="mt-5 max-w-prose space-y-4 leading-relaxed whitespace-pre-line text-gray-700">
+              {%- for paragraph in product.description_paragraphs %}<p>{{ paragraph }}</p>{% endfor -%}
+            </div>
+          </div>
+        {% endif %}
+
+        {% if has_specs %}
+          <div id="specifications" class="scroll-mt-24 {{ 'lg:col-span-2' if has_description }}">
+            <h2 class="text-2xl font-bold tracking-tight">Specifications</h2>
+            <div class="card mt-5 overflow-hidden {{ 'max-w-3xl' if not has_description }}">
+              {% for group, specs in product.spec_groups %}
+                {% if group %}
+                  <h3 class="border-gray-200 bg-gray-50 px-5 py-2.5 text-xs font-semibold tracking-wide text-gray-600 uppercase {{ 'border-t' if not loop.first }}">{{ group }}</h3>
+                {% endif %}
+                <dl class="divide-y divide-gray-100 {{ 'border-t border-gray-200' if not group and not loop.first }}">
+                  {% for spec in specs %}
+                    <div class="grid grid-cols-5 gap-4 px-5 py-3 text-sm">
+                      <dt class="col-span-2 text-gray-500">{{ spec.name }}</dt>
+                      <dd class="col-span-3 font-medium text-gray-900">{{ spec.value }}</dd>
+                    </div>
+                  {% endfor %}
+                </dl>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% include "reviews/_section.html" %}
+
+  {% if related %}
+    <section class="mt-16">
+      <h2 class="text-2xl font-bold tracking-tight">You may also like</h2>
+      <div class="mt-6">{{ p.grid(related) }}</div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ static('js/gallery.js') }}" defer></script>
+{% endblock %}

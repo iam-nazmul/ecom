@@ -1,0 +1,42 @@
+{% macro star_icon(size="h-4 w-4") %}
+  <svg class="{{ size }} shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401Z"/></svg>
+{% endmacro %}
+
+{# Read-only stars, filled proportionally (4.3 → 86%). #}
+{% macro stars(rating, size="h-4 w-4") %}
+  {% set value = rating or 0 %}
+  <span class="relative inline-flex shrink-0 align-middle" role="img" aria-label="Rated {{ '%.1f'|format(value) }} out of 5">
+    <span class="flex text-gray-300">{% for _ in range(5) %}{{ star_icon(size) }}{% endfor %}</span>
+    <span class="absolute inset-y-0 left-0 flex overflow-hidden text-amber-400" style="width: {{ (value / 5 * 100)|round(1) }}%">
+      {%- for _ in range(5) %}{{ star_icon(size) }}{% endfor -%}
+    </span>
+  </span>
+{% endmacro %}
+
+{# Compact "★★★★☆ (12)" line for product cards; nothing when unrated. #}
+{% macro card_rating(product) %}
+  {% if product.rating_count %}
+    <div class="flex items-center gap-1.5 text-xs text-gray-500">
+      {{ stars(product.rating_avg, "h-3.5 w-3.5") }}
+      <span>({{ product.rating_count }})</span>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{# Accessible 1–5 star radio input bound to a Django form field. #}
+{% macro star_input(field) %}
+  {% set current = field.value()|string %}
+  <fieldset class="field {{ 'has-error' if field.errors }}">
+    <legend class="mb-1.5 block text-sm font-medium text-gray-700">Rating<span class="text-red-500" aria-hidden="true"> *</span></legend>
+    <div class="star-input">
+      {% for value, label in field.field.choices %}
+        <input type="radio" id="{{ field.auto_id }}_{{ value }}" name="{{ field.html_name }}" value="{{ value }}"
+               {{ 'checked' if current == value|string }} {{ 'required' if loop.first }}>
+        <label for="{{ field.auto_id }}_{{ value }}" title="{{ label }}">
+          <span class="sr-only">{{ label }}</span>{{ star_icon("h-8 w-8") }}
+        </label>
+      {% endfor %}
+    </div>
+    {% for error in field.errors %}<p class="mt-1 text-xs font-medium text-red-600">{{ error }}</p>{% endfor %}
+  </fieldset>
+{% endmacro %}

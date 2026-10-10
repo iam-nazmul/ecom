@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Ecom{% endblock %} · Ecom</title>
+  <meta name="description" content="{% block meta_description %}Quality products, delivered to your door.{% endblock %}">
+  <link rel="icon" href="{{ static('img/favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ static('css/app.css') }}">
+</head>
+<body class="flex min-h-full flex-col bg-gray-50 font-sans text-gray-900 antialiased">
+  {% set c = get_cart(request) %}
+  <header class="sticky top-0 z-30 border-b border-gray-200 bg-white/90 backdrop-blur">
+    <div class="container-page flex h-16 items-center gap-4">
+      <a href="{{ url('core:home') }}" class="flex shrink-0 items-center gap-2 text-lg font-bold tracking-tight">
+        <img src="{{ static('img/favicon.svg') }}" alt="" class="h-8 w-8">
+        <span>Ecom</span>
+      </a>
+
+      <nav class="hidden items-center gap-6 text-sm font-medium text-gray-600 md:flex">
+        <a href="{{ url('catalog:product_list') }}" class="hover:text-gray-900">Shop all</a>
+      </nav>
+
+      <form action="{{ url('catalog:product_list') }}" method="get" role="search" class="ml-auto hidden max-w-sm flex-1 sm:block">
+        <label for="site-search" class="sr-only">Search products</label>
+        <input id="site-search" type="search" name="q" value="{{ request.GET.get('q', '') }}"
+               placeholder="Search products…" class="input">
+      </form>
+
+      <div class="ml-auto flex items-center gap-3 sm:ml-0">
+        {% if request.user.is_authenticated %}
+          <a href="{{ url('accounts:orders') }}" class="hidden text-sm font-medium text-gray-600 hover:text-gray-900 sm:inline">My orders</a>
+          {% if request.user.is_staff %}
+            <a href="{{ url('admin:index') }}" class="hidden text-sm font-medium text-gray-600 hover:text-gray-900 sm:inline">Admin</a>
+          {% endif %}
+          <form action="{{ url('accounts:logout') }}" method="post">
+            {{ csrf_input }}
+            <button type="submit" class="text-sm font-medium text-gray-600 hover:text-gray-900">Log out</button>
+          </form>
+        {% else %}
+          <a href="{{ url('accounts:login') }}" class="text-sm font-medium text-gray-600 hover:text-gray-900">Log in</a>
+        {% endif %}
+
+        <a href="{{ url('cart:detail') }}" class="relative inline-flex items-center rounded-lg p-2 text-gray-700 hover:bg-gray-100" aria-label="Cart, {{ c|length }} items">
+          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 1 0-7.5 0v4.5m11.356-1.993 1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 0 1-1.12-1.243l1.264-12A1.125 1.125 0 0 1 5.513 7.5h12.974c.576 0 1.059.435 1.119 1.007Z"/>
+          </svg>
+          {% if c|length %}
+            <span class="absolute -top-0.5 -right-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-600 px-1 text-xs font-bold text-white">{{ c|length }}</span>
+          {% endif %}
+        </a>
+      </div>
+    </div>
+  </header>
+
+  {% set msgs = get_messages(request) %}
+  {% if msgs %}
+    <div class="container-page mt-4 space-y-2" role="status">
+      {% for message in msgs %}
+        {% set tone = {
+          'success': 'bg-green-50 text-green-800 ring-green-200',
+          'error': 'bg-red-50 text-red-800 ring-red-200',
+          'warning': 'bg-amber-50 text-amber-800 ring-amber-200',
+        }.get(message.tags, 'bg-blue-50 text-blue-800 ring-blue-200') %}
+        <div class="rounded-lg px-4 py-3 text-sm font-medium ring-1 {{ tone }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <main class="flex-1">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="mt-16 border-t border-gray-200 bg-white">
+    <div class="container-page flex flex-col gap-4 py-8 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between">
+      <p>&copy; {{ now().year }} Ecom. All rights reserved.</p>
+      <p>Free shipping on orders over {{ settings.FREE_SHIPPING_THRESHOLD|money }} · Cash on delivery</p>
+    </div>
+  </footer>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

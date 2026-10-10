@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% import "macros/product.html" as p %}
+
+{% block title %}Your cart{% endblock %}
+
+{% block content %}
+<div class="container-page py-10">
+  <h1 class="text-3xl font-bold tracking-tight">Shopping cart</h1>
+
+  {% if cart.lines %}
+    <div class="mt-8 grid gap-8 lg:grid-cols-[1fr_22rem]">
+      <ul class="card divide-y divide-gray-200">
+        {% for line in cart %}
+          {% set product = line.product %}
+          <li class="flex gap-4 p-4 sm:p-6">
+            <a href="{{ product.get_absolute_url() }}" class="w-20 shrink-0 overflow-hidden rounded-lg sm:w-28">{{ p.image(product) }}</a>
+            <div class="flex flex-1 flex-col gap-2 sm:flex-row sm:justify-between">
+              <div>
+                <a href="{{ product.get_absolute_url() }}" class="font-medium hover:text-brand-600">{{ product.name }}</a>
+                <p class="text-sm text-gray-500">{{ product.category.name }}</p>
+                <p class="mt-1 text-sm">{{ product.price|money }} each</p>
+              </div>
+              <div class="flex items-center gap-3 sm:flex-col sm:items-end">
+                <form action="{{ url('cart:update', product.pk) }}" method="post" class="flex items-center gap-2">
+                  {{ csrf_input }}
+                  <label for="qty-{{ product.pk }}" class="sr-only">Quantity for {{ product.name }}</label>
+                  <input id="qty-{{ product.pk }}" type="number" name="quantity" value="{{ line.quantity }}"
+                         min="0" max="{{ product.stock }}" class="input w-20">
+                  <button type="submit" class="btn btn-secondary px-3 py-2">Update</button>
+                </form>
+                <form action="{{ url('cart:remove', product.pk) }}" method="post">
+                  {{ csrf_input }}
+                  <button type="submit" class="text-sm font-medium text-red-600 hover:text-red-700">Remove</button>
+                </form>
+                <p class="font-semibold sm:mt-auto">{{ line.line_total|money }}</p>
+              </div>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+
+      {% include "cart/_summary.html" %}
+    </div>
+  {% else %}
+    <div class="card mt-8 p-12 text-center">
+      <p class="text-lg font-medium">Your cart is empty.</p>
+      <a href="{{ url('catalog:product_list') }}" class="btn btn-primary mt-6">Continue shopping</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

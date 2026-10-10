@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% import "macros/forms.html" as f %}
+
+{% block title %}Create account{% endblock %}
+
+{% block content %}
+<div class="container-page flex justify-center py-16">
+  <div class="card w-full max-w-md p-8">
+    <h1 class="text-2xl font-bold tracking-tight">Create your account</h1>
+    <p class="mt-1 text-sm text-gray-600">Track orders and check out faster.</p>
+    <form method="post" class="mt-6 space-y-4">
+      {{ csrf_input }}
+      {{ f.non_field_errors(form) }}
+      {% for field in form %}{{ f.field(field) }}{% endfor %}
+      <button type="submit" class="btn btn-primary w-full py-3">Create account</button>
+    </form>
+    <p class="mt-6 text-center text-sm text-gray-600">
+      Already have an account? <a href="{{ url('accounts:login') }}" class="btn-link">Log in</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+.git
+.env
+**/__pycache__
+**/*.pyc
+node_modules
+staticfiles
+media
+static/css/app.css
+.venv
+.vscode
+.idea

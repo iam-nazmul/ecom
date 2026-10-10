@@ -1,0 +1,89 @@
+{% import "macros/reviews.html" as r %}
+
+{% set palettes = [
+  'from-indigo-100 to-indigo-300 text-indigo-800',
+  'from-rose-100 to-rose-300 text-rose-800',
+  'from-emerald-100 to-emerald-300 text-emerald-800',
+  'from-amber-100 to-amber-300 text-amber-800',
+  'from-sky-100 to-sky-300 text-sky-800',
+  'from-violet-100 to-violet-300 text-violet-800',
+] %}
+
+{% macro image(product, class="aspect-square") %}
+  {% if product.cover_url %}
+    <img src="{{ product.cover_url }}" alt="{{ product.name }}" loading="lazy" class="{{ class }} w-full object-cover">
+  {% else %}
+    <div class="{{ class }} flex w-full items-center justify-center bg-linear-to-br {{ palettes[product.pk % palettes|length] }}" role="img" aria-label="{{ product.name }}">
+      <span class="px-4 text-center text-3xl font-black tracking-tight opacity-80">
+        {{ (product.name.split()|map('first')|join('')|upper)[:3] }}
+      </span>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{# Detail-page gallery: main image, prev/next, thumbnails. Behaviour in static/js/gallery.js. #}
+{% macro gallery(product) %}
+  {% set items = product.gallery %}
+  {% if items|length < 2 %}
+    <div class="card overflow-hidden">{{ image(product) }}</div>
+  {% else %}
+    <div data-gallery aria-roledescription="carousel" aria-label="{{ product.name }} images">
+      <div class="card group relative overflow-hidden">
+        <img data-gallery-main src="{{ items[0].url }}" alt="{{ items[0].alt }}" class="aspect-square w-full object-cover">
+        <button type="button" data-gallery-prev aria-label="Previous image"
+                class="absolute top-1/2 left-3 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-900 shadow transition hover:bg-white focus-visible:outline-2 focus-visible:outline-brand-600 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
+        </button>
+        <button type="button" data-gallery-next aria-label="Next image"
+                class="absolute top-1/2 right-3 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-900 shadow transition hover:bg-white focus-visible:outline-2 focus-visible:outline-brand-600 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5"/></svg>
+        </button>
+        <span data-gallery-counter aria-live="polite"
+              class="absolute right-3 bottom-3 rounded-full bg-gray-900/70 px-2.5 py-1 text-xs font-medium text-white">1 / {{ items|length }}</span>
+      </div>
+      <ul class="mt-4 flex gap-3 overflow-x-auto p-1">
+        {% for item in items %}
+          <li class="shrink-0">
+            <button type="button" data-gallery-thumb data-src="{{ item.url }}" data-alt="{{ item.alt }}"
+                    aria-label="Show image {{ loop.index }} of {{ items|length }}"
+                    aria-current="{{ 'true' if loop.first else 'false' }}"
+                    class="block h-20 w-20 overflow-hidden rounded-lg opacity-70 ring-2 ring-transparent transition hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 aria-[current=true]:opacity-100 aria-[current=true]:ring-brand-600">
+              <img src="{{ item.url }}" alt="" loading="lazy" class="h-full w-full object-cover">
+            </button>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro price(product, size="text-base") %}
+  <span class="{{ size }} font-semibold text-gray-900">{{ product.price|money }}</span>
+  {% if product.on_sale %}
+    <span class="ml-1 text-sm text-gray-400 line-through">{{ product.compare_at_price|money }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro card(product) %}
+  <a href="{{ product.get_absolute_url() }}" class="group card flex flex-col overflow-hidden transition hover:shadow-md">
+    <div class="relative overflow-hidden">
+      <div class="transition duration-300 group-hover:scale-105">{{ image(product) }}</div>
+      <div class="absolute top-3 left-3 flex gap-1.5">
+        {% if product.on_sale %}<span class="badge bg-rose-600 text-white">-{{ product.discount_percent }}%</span>{% endif %}
+        {% if not product.in_stock %}<span class="badge bg-gray-900 text-white">Sold out</span>{% endif %}
+      </div>
+    </div>
+    <div class="flex flex-1 flex-col gap-1 p-4">
+      <p class="text-xs font-medium tracking-wide text-gray-500 uppercase">{{ product.category.name }}</p>
+      <h3 class="line-clamp-2 font-medium text-gray-900 group-hover:text-brand-600">{{ product.name }}</h3>
+      {{ r.card_rating(product) }}
+      <div class="mt-auto pt-2">{{ price(product) }}</div>
+    </div>
+  </a>
+{% endmacro %}
+
+{% macro grid(products) %}
+  <div class="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-3 lg:grid-cols-4">
+    {% for product in products %}{{ card(product) }}{% endfor %}
+  </div>
+{% endmacro %}

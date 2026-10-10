@@ -1,0 +1,21 @@
+{# Expects: subtotal, shipping, total. Optional: show_checkout (default true). #}
+<aside class="card h-fit p-6 lg:sticky lg:top-24">
+  <h2 class="text-lg font-semibold">Order summary</h2>
+  <dl class="mt-4 space-y-3 text-sm">
+    <div class="flex justify-between"><dt class="text-gray-600">Subtotal</dt><dd>{{ subtotal|money }}</dd></div>
+    <div class="flex justify-between">
+      <dt class="text-gray-600">Shipping</dt>
+      <dd>{{ 'Free' if shipping == 0 else shipping|money }}</dd>
+    </div>
+    {% if shipping > 0 %}
+      <p class="text-xs text-gray-500">Add {{ (settings.FREE_SHIPPING_THRESHOLD - subtotal)|money }} more for free shipping.</p>
+    {% endif %}
+    <div class="flex justify-between border-t border-gray-200 pt-3 text-base font-semibold">
+      <dt>Total</dt><dd>{{ total|money }}</dd>
+    </div>
+  </dl>
+  {% if show_checkout is not defined or show_checkout %}
+    <a href="{{ url('orders:checkout') }}" class="btn btn-primary mt-6 w-full py-3">Proceed to checkout</a>
+    <a href="{{ url('catalog:product_list') }}" class="btn-link mt-3 block text-center">Continue shopping</a>
+  {% endif %}
+</aside>

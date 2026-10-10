@@ -1,0 +1,158 @@
+{# Reviews & ratings for the product detail page.
+   Expects: product, rating, reviews_page, reviews_sort, review_sorts, user_review, review_form. #}
+{% import "macros/reviews.html" as r %}
+{% import "macros/forms.html" as f %}
+
+<section id="reviews" class="mt-16 scroll-mt-24 border-t border-gray-200 pt-12" aria-labelledby="reviews-heading">
+  <div class="grid gap-10 lg:grid-cols-3">
+
+    {# ---- Summary + write a review ---- #}
+    <div class="space-y-8">
+      <div>
+        <h2 id="reviews-heading" class="text-2xl font-bold tracking-tight">Customer reviews</h2>
+        {% if rating.count %}
+          <div class="mt-4 flex items-center gap-4">
+            <p class="text-5xl font-bold tracking-tight">{{ '%.1f'|format(rating.average) }}</p>
+            <div>
+              {{ r.stars(rating.average, "h-5 w-5") }}
+              <p class="mt-1 text-sm text-gray-600">Based on {{ rating.count }} review{{ 's' if rating.count != 1 }}</p>
+            </div>
+          </div>
+          <dl class="mt-6 space-y-2">
+            {% for stars, count, percent in rating.distribution %}
+              <div class="flex items-center gap-3 text-sm">
+                <dt class="w-12 shrink-0 text-gray-600">{{ stars }} star</dt>
+                <dd class="flex flex-1 items-center gap-3">
+                  <span class="h-2.5 flex-1 overflow-hidden rounded-full bg-gray-200"
+                        role="img" aria-label="{{ percent }}% of reviews">
+                    <span class="block h-full rounded-full bg-amber-400" style="width: {{ percent }}%"></span>
+                  </span>
+                  <span class="w-8 text-right text-gray-500 tabular-nums">{{ count }}</span>
+                </dd>
+              </div>
+            {% endfor %}
+          </dl>
+        {% else %}
+          <p class="mt-3 text-gray-600">No reviews yet. Be the first to share your thoughts.</p>
+        {% endif %}
+      </div>
+
+      <div class="card p-6">
+        {% if not request.user.is_authenticated %}
+          <h3 class="font-semibold">Share your thoughts</h3>
+          <p class="mt-1 text-sm text-gray-600">Let other customers know what you think.</p>
+          <a href="{{ url('accounts:login') }}?next={{ (product.get_absolute_url() ~ '#reviews')|urlencode }}"
+             class="btn btn-primary mt-4 w-full">Log in to write a review</a>
+
+        {% else %}
+          {% set has_errors = review_form.is_bound and review_form.errors %}
+          {% if user_review %}
+            <h3 class="font-semibold">Your review</h3>
+            <div class="mt-2 flex items-center gap-2 text-sm text-gray-600">
+              {{ r.stars(user_review.rating) }}
+              <span>{{ user_review.updated_at|localtime('%b %d, %Y') }}</span>
+            </div>
+            {% if not user_review.is_approved %}
+              <p class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
+                This review is hidden from other shoppers by our moderators.
+              </p>
+            {% endif %}
+          {% endif %}
+
+          <details class="group {{ 'mt-4' if user_review }}" {{ 'open' if has_errors or not user_review }}>
+            {% if user_review %}
+              <summary class="btn-link cursor-pointer list-none">Edit your review</summary>
+            {% else %}
+              <summary class="list-none font-semibold">Write a review</summary>
+            {% endif %}
+            <form method="post" action="{{ url('reviews:submit', product.slug) }}" class="mt-4 space-y-4" novalidate>
+              {{ csrf_input }}
+              {{ f.non_field_errors(review_form) }}
+              {{ r.star_input(review_form.rating) }}
+              {{ f.field(review_form.title) }}
+              {{ f.field(review_form.body) }}
+              <button type="submit" class="btn btn-primary w-full">{{ 'Update review' if user_review else 'Submit review' }}</button>
+            </form>
+          </details>
+
+          {% if user_review %}
+            <form method="post" action="{{ url('reviews:delete', product.slug) }}" class="mt-3">
+              {{ csrf_input }}
+              <button type="submit" class="text-sm font-medium text-red-600 hover:text-red-700">Delete review</button>
+            </form>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
+
+    {# ---- Review list ---- #}
+    <div class="lg:col-span-2">
+      {% if reviews_page.paginator.count %}
+        <form method="get" action="#reviews" class="flex items-center justify-between gap-4 border-b border-gray-200 pb-4">
+          <p class="text-sm text-gray-600">
+            Showing {{ reviews_page.start_index() }}–{{ reviews_page.end_index() }} of {{ reviews_page.paginator.count }}
+          </p>
+          <div class="flex items-center gap-2">
+            <label for="reviews-sort" class="text-sm text-gray-600">Sort by</label>
+            <select id="reviews-sort" name="reviews_sort" class="input w-auto" onchange="this.form.submit()">
+              {% for key, (label, _) in review_sorts.items() %}
+                <option value="{{ key }}" {{ 'selected' if key == reviews_sort }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+            <noscript><button class="btn btn-secondary">Apply</button></noscript>
+          </div>
+        </form>
+
+        <ul class="divide-y divide-gray-200">
+          {% for review in reviews_page.object_list %}
+            <li class="py-6">
+              <article aria-label="Review by {{ review.author_name }}">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {{ r.stars(review.rating) }}
+                  {% if review.title %}<h3 class="font-semibold text-gray-900">{{ review.title }}</h3>{% endif %}
+                </div>
+                <div class="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-gray-500">
+                  <span class="font-medium text-gray-700">{{ review.author_name }}</span>
+                  <span aria-hidden="true">·</span>
+                  <time datetime="{{ review.created_at.isoformat() }}">{{ review.created_at|localtime('%b %d, %Y') }}</time>
+                  {% if review.verified_purchase %}
+                    <span class="badge gap-1 bg-green-50 text-green-700 ring-1 ring-green-200">
+                      <svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd"/></svg>
+                      Verified purchase
+                    </span>
+                  {% endif %}
+                  {% if request.user.is_authenticated and review.user_id == request.user.pk %}
+                    <span class="badge bg-brand-50 text-brand-700">You</span>
+                  {% endif %}
+                </div>
+                <p class="mt-3 leading-relaxed whitespace-pre-line text-gray-700">{{ review.body }}</p>
+              </article>
+            </li>
+          {% endfor %}
+        </ul>
+
+        {% if reviews_page.paginator.num_pages > 1 %}
+          <nav class="mt-4 flex items-center justify-center gap-1" aria-label="Reviews pagination">
+            {% if reviews_page.has_previous() %}
+              <a href="{{ query_with(request, reviews_page=reviews_page.previous_page_number()) }}#reviews" class="btn btn-secondary">&larr; Prev</a>
+            {% endif %}
+            {% for n in reviews_page.paginator.page_range %}
+              <a href="{{ query_with(request, reviews_page=n) }}#reviews"
+                 class="btn {{ 'btn-primary' if n == reviews_page.number else 'btn-secondary' }}"
+                 {{ 'aria-current="page"'|safe if n == reviews_page.number }}>{{ n }}</a>
+            {% endfor %}
+            {% if reviews_page.has_next() %}
+              <a href="{{ query_with(request, reviews_page=reviews_page.next_page_number()) }}#reviews" class="btn btn-secondary">Next &rarr;</a>
+            {% endif %}
+          </nav>
+        {% endif %}
+      {% else %}
+        <div class="card flex h-full min-h-40 flex-col items-center justify-center p-10 text-center">
+          {{ r.stars(0, "h-6 w-6") }}
+          <p class="mt-3 font-medium">This product hasn't been reviewed yet.</p>
+          <p class="mt-1 text-sm text-gray-500">Bought it? Tell others what you think.</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>

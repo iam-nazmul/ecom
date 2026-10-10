@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}Page not found{% endblock %}
+
+{% block content %}
+<div class="container-page py-24 text-center">
+  <p class="text-sm font-semibold text-brand-600">404</p>
+  <h1 class="mt-2 text-4xl font-bold tracking-tight">Page not found</h1>
+  <p class="mt-4 text-gray-600">Sorry, we couldn't find what you were looking for.</p>
+  <a href="{{ url('core:home') }}" class="btn btn-primary mt-8">Back to home</a>
+</div>
+{% endblock %}
