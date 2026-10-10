@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+
+{% block title %}Profit & loss{% endblock %}
+
+{% macro line(label, amount, hint="", strong=False, negative=False, indent=False) %}
+  <div class="flex items-baseline justify-between gap-4 px-5 py-2.5 {{ 'bg-gray-50 font-semibold' if strong }} {{ 'pl-9' if indent }}">
+    <dt class="{{ 'text-gray-900' if strong else 'text-gray-600' }}">{{ label }}{% if hint %} <span class="text-xs font-normal text-gray-400">{{ hint }}</span>{% endif %}</dt>
+    <dd class="tabular-nums {{ 'text-gray-900' if strong else 'text-gray-700' }}">{{ ('(' ~ (amount|money) ~ ')') if negative else amount|money }}</dd>
+  </div>
+{% endmacro %}
+
+{% block content %}
+{% set t = report.totals %}
+<div class="container-page py-8">
+  <h1 class="mb-6 text-3xl font-bold tracking-tight">Profit &amp; loss</h1>
+  {% set active = "profit_loss" %}{% include "inventory/_nav.html" %}
+
+  {# ---- Period ---- #}
+  <div class="mt-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div class="flex flex-wrap gap-2" role="group" aria-label="Period">
+      {% for key, (label, _, _) in presets.items() %}
+        <a href="?range={{ key }}" {{ 'aria-current="true"'|safe if key == preset }}
+           class="rounded-full px-3 py-1.5 text-sm font-medium ring-1 {{ 'bg-brand-600 text-white ring-brand-600' if key == preset else 'bg-white text-gray-700 ring-gray-300 hover:bg-gray-50' }}">{{ label }}</a>
+      {% endfor %}
+    </div>
+    <form method="get" class="flex flex-wrap items-end gap-2">
+      <label class="text-sm text-gray-600">From <input type="date" name="start" value="{{ report.start.isoformat() }}" class="input mt-1 w-auto" required></label>
+      <label class="text-sm text-gray-600">To <input type="date" name="end" value="{{ report.end.isoformat() }}" class="input mt-1 w-auto" required></label>
+      <button type="submit" class="btn btn-secondary">Apply</button>
+    </form>
+  </div>
+  <p class="mt-3 text-sm text-gray-500">
+    {{ report.start.strftime('%b %d, %Y') }} – {{ report.end.strftime('%b %d, %Y') }} ·
+    revenue is counted when an order is <span class="font-medium text-gray-700">Delivered</span>.
+  </p>
+
+  {# ---- KPIs ---- #}
+  {% set income = t.revenue + t.shipping %}{# sales revenue; margins are based on this #}
+  <div class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div class="card p-5">
+      <p class="text-sm text-gray-500">Net profit</p>
+      <p class="mt-1 text-2xl font-bold tracking-tight {{ 'text-green-700' if t.net_profit >= 0 else 'text-red-600' }}">{{ t.net_profit|money }}</p>
+      <p class="mt-1 text-xs text-gray-500">Net margin {{ t.net_margin|percent }}</p>
+    </div>
+    <div class="card p-5">
+      <p class="text-sm text-gray-500">Gross profit</p>
+      <p class="mt-1 text-2xl font-bold tracking-tight">{{ t.gross_profit|money }}</p>
+      <p class="mt-1 text-xs text-gray-500">Gross margin {{ t.gross_margin|percent }}</p>
+    </div>
+    <div class="card p-5">
+      <p class="text-sm text-gray-500">Total income</p>
+      <p class="mt-1 text-2xl font-bold tracking-tight">{{ t.total_income|money }}</p>
+      <p class="mt-1 text-xs text-gray-500">Sales {{ income|money }} · other {{ t.other_income|money }}</p>
+    </div>
+    <div class="card p-5">
+      <p class="text-sm text-gray-500">Average order value</p>
+      <p class="mt-1 text-2xl font-bold tracking-tight">{{ (t.revenue / t.orders)|money if t.orders else '—' }}</p>
+      <p class="mt-1 text-xs text-gray-500">Product sales per delivered order</p>
+    </div>
+  </div>
+
+  {% if report.unknown_cost_items %}
+    <p class="mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200" role="note">
+      {{ report.unknown_cost_items }} sold item{{ 's' if report.unknown_cost_items != 1 }} in this period came from orders placed before
+      inventory tracking and have no recorded cost, so they count as zero cost. Profit is overstated by their cost.
+    </p>
+  {% endif %}
+
+  <div class="mt-8 grid gap-8 lg:grid-cols-5">
+    {# ---- Statement ---- #}
+    <section class="card overflow-hidden lg:col-span-3" aria-labelledby="statement-heading">
+      <h2 id="statement-heading" class="px-5 py-4 font-semibold">Income statement</h2>
+      <dl class="divide-y divide-gray-100 text-sm">
+        {{ line("Product sales", t.revenue) }}
+        {{ line("Shipping charged", t.shipping) }}
+        {{ line("Sales revenue", income, t.orders ~ " delivered order" ~ ('s' if t.orders != 1 else ''), strong=True) }}
+        {{ line("Cost of goods sold", t.cogs, "average cost at time of sale", negative=True) }}
+        {{ line("Gross profit", t.gross_profit, t.gross_margin|percent ~ " margin", strong=True) }}
+        {% for label, amount in report.expenses_by_category %}
+          {{ line(label, amount, negative=True, indent=True) }}
+        {% endfor %}
+        {{ line("Operating expenses", t.expenses, negative=True) }}
+        {{ line("Stock adjustments", t.adjustments, "write-offs (−) / count gains (+), at cost") }}
+        {{ line("Operating profit", t.operating_profit, strong=True) }}
+        {% for label, amount in report.income_by_category %}
+          {{ line(label, amount, indent=True) }}
+        {% endfor %}
+        {{ line("Other income", t.other_income, "not from product sales") }}
+        <div class="flex items-baseline justify-between gap-4 px-5 py-4 text-base font-bold {{ 'bg-green-50 text-green-800' if t.net_profit >= 0 else 'bg-red-50 text-red-700' }}">
+          <dt>Net {{ 'profit' if t.net_profit >= 0 else 'loss' }} <span class="text-xs font-normal">{{ t.net_margin|percent }} margin</span></dt>
+          <dd class="tabular-nums">{{ t.net_profit|money }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    {# ---- Context ---- #}
+    <div class="space-y-4 lg:col-span-2">
+      <div class="card p-5">
+        <h2 class="font-semibold">Not yet counted</h2>
+        <p class="mt-1 text-sm text-gray-600">
+          <span class="font-semibold text-gray-900">{{ report.open_orders.count }}</span> open order{{ 's' if report.open_orders.count != 1 }}
+          worth <span class="font-semibold text-gray-900">{{ report.open_orders.value|money }}</span> (pending, processing or shipped) will count as revenue once delivered.
+        </p>
+      </div>
+      <div class="card p-5">
+        <h2 class="font-semibold">Stock purchased in this period</h2>
+        <p class="mt-1 text-2xl font-bold tracking-tight">{{ report.purchases_received|money }}</p>
+        <p class="mt-1 text-sm text-gray-600">
+          Purchases aren't an expense: received stock is an asset until it sells, then its cost moves into
+          <em>cost of goods sold</em>.
+        </p>
+      </div>
+      <div class="card p-5 text-sm text-gray-600">
+        <h2 class="font-semibold text-gray-900">How profit is calculated</h2>
+        <ul class="mt-2 list-disc space-y-1 pl-5">
+          <li><b>Gross profit</b> = sales + shipping − cost of goods sold</li>
+          <li><b>Operating profit</b> = gross profit − expenses ± stock adjustments</li>
+          <li><b>Net profit</b> = operating profit + other income (rebates, services, interest…)</li>
+          <li>Margins are measured against sales revenue.</li>
+          <li>Cost of goods sold uses each product's weighted-average cost when it was sold (including shipping/customs on purchases).</li>
+          <li>Cancelled orders are excluded and their stock is returned.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  {# ---- By month ---- #}
+  <section class="card mt-8 overflow-hidden" aria-labelledby="monthly-heading">
+    <h2 id="monthly-heading" class="px-5 py-4 font-semibold">By month</h2>
+    {% if report.months %}
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[58rem] text-sm">
+          <thead class="bg-gray-50 text-left text-xs tracking-wide text-gray-500 uppercase">
+            <tr>
+              <th class="px-5 py-2 font-medium">Month</th>
+              <th class="px-3 py-2 text-right font-medium">Income</th>
+              <th class="px-3 py-2 text-right font-medium">COGS</th>
+              <th class="px-3 py-2 text-right font-medium">Gross profit</th>
+              <th class="px-3 py-2 text-right font-medium">Expenses</th>
+              <th class="px-3 py-2 text-right font-medium">Adjustments</th>
+              <th class="px-3 py-2 text-right font-medium">Other income</th>
+              <th class="px-3 py-2 text-right font-medium">Net profit</th>
+              <th class="w-48 px-5 py-2 font-medium"><span class="sr-only">Chart</span></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for m in report.months %}
+              <tr>
+                <td class="px-5 py-2.5 font-medium whitespace-nowrap">{{ m.label }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums">{{ (m.revenue + m.shipping)|money }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums text-gray-500">{{ m.cogs|money }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums">{{ m.gross_profit|money }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums text-gray-500">{{ m.expenses|money }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums text-gray-500">{{ m.adjustments|money }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums text-gray-500">{{ m.other_income|money }}</td>
+                <td class="px-3 py-2.5 text-right font-semibold tabular-nums {{ 'text-green-700' if m.net_profit >= 0 else 'text-red-600' }}">{{ m.net_profit|money }}</td>
+                <td class="px-5 py-2.5">
+                  <div class="space-y-1" aria-hidden="true">
+                    <div class="h-2 rounded-full bg-brand-500" style="width: {{ (m.total_income / peak * 100)|round(1) }}%"></div>
+                    <div class="h-2 rounded-full {{ 'bg-green-500' if m.net_profit >= 0 else 'bg-red-500' }}" style="width: {{ (m.net_profit|abs / peak * 100)|round(1) }}%"></div>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="flex gap-4 border-t border-gray-100 px-5 py-3 text-xs text-gray-500">
+        <span class="inline-flex items-center gap-1.5"><span class="h-2 w-4 rounded-full bg-brand-500"></span>Income</span>
+        <span class="inline-flex items-center gap-1.5"><span class="h-2 w-4 rounded-full bg-green-500"></span>Net profit</span>
+        <span class="inline-flex items-center gap-1.5"><span class="h-2 w-4 rounded-full bg-red-500"></span>Net loss</span>
+      </p>
+    {% else %}
+      <p class="px-5 pb-5 text-sm text-gray-500">No delivered orders, expenses, income or adjustments in this period.</p>
+    {% endif %}
+  </section>
+
+  {# ---- Top products ---- #}
+  <section class="card mt-8 overflow-hidden" aria-labelledby="products-heading">
+    <h2 id="products-heading" class="px-5 py-4 font-semibold">Most profitable products</h2>
+    {% if report.top_products %}
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[40rem] text-sm">
+          <thead class="bg-gray-50 text-left text-xs tracking-wide text-gray-500 uppercase">
+            <tr>
+              <th class="px-5 py-2 font-medium">Product</th>
+              <th class="px-3 py-2 text-right font-medium">Units</th>
+              <th class="px-3 py-2 text-right font-medium">Sales</th>
+              <th class="px-3 py-2 text-right font-medium">COGS</th>
+              <th class="px-3 py-2 text-right font-medium">Profit</th>
+              <th class="px-5 py-2 text-right font-medium">Margin</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for p in report.top_products %}
+              <tr>
+                <td class="px-5 py-2.5 font-medium">
+                  {% if p.product_id %}<a href="{{ url('inventory:ledger', p.product_id) }}" class="hover:text-brand-600">{{ p.product_name }}</a>{% else %}{{ p.product_name }}{% endif %}
+                </td>
+                <td class="px-3 py-2.5 text-right tabular-nums">{{ p.units }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums">{{ p.revenue|money }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums text-gray-500">{{ p.cogs|money }}</td>
+                <td class="px-3 py-2.5 text-right font-semibold tabular-nums {{ 'text-green-700' if p.profit >= 0 else 'text-red-600' }}">{{ p.profit|money }}</td>
+                <td class="px-5 py-2.5 text-right tabular-nums">{{ p.margin|percent }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="px-5 pb-5 text-sm text-gray-500">No products delivered in this period.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

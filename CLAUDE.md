@@ -18,6 +18,9 @@ apps/catalog/      Category, Product, ProductImage (gallery), ProductSpec (speci
 apps/cart/         session cart (apps/cart/cart.py) + views
 apps/orders/       Order, OrderItem, checkout service (apps/orders/services.py)
 apps/accounts/     signup / login / logout / order history
+apps/inventory/    Supplier, Purchase(+Item), StockMovement ledger, StockAdjustment, Expense, Income;
+                   services.py = ALL stock/cost rules + profit_and_loss(); demo.py = demo data;
+                   payments.py = supplier payments, allocation, balances, statements
 apps/reviews/      Review model, rating summary + review context (apps/reviews/services.py), submit/delete views
 template/          ALL storefront templates (Jinja2), incl. macros/ and errors
 assets/css/        Tailwind source (input.css) → compiled to static/css/app.css
@@ -54,14 +57,32 @@ The Docker image builds the CSS itself in a Node stage, so `npm` is not needed t
   `DjangoTemplates` backend. Don't remove it.
 - Money is always `Decimal`; never use float. Pricing rules live in `apps/orders/services.py`
   and settings (`SHIPPING_FLAT_RATE`, `FREE_SHIPPING_THRESHOLD`, `CURRENCY_SYMBOL`).
-- Anything that changes stock goes through a `transaction.atomic()` block using
-  `select_for_update()` (see `place_order`).
+- **Never assign `Product.stock` or `average_cost` directly.** Every stock change goes through
+  `apps.inventory.services.record_movement()` on a product locked with `select_for_update()`
+  (use `lock_products()`), inside `transaction.atomic()`. It writes the ledger row and
+  re-averages cost. Higher-level helpers: `receive_purchase`, `record_sale`,
+  `restock_cancelled_order`, `apply_adjustment`. Ledger rows are never edited or deleted.
+- Revenue is recognised on `Order.delivered_at` (set in `Order.save()`); COGS uses the
+  `OrderItem.unit_cost` snapshot. Purchases are inventory, not expenses. Sales and shipping
+  income come only from delivered orders; `Income` is for everything else (never record
+  product sales there, or they'd be counted twice).
+- Supplier money goes through `apps/inventory/payments.py` (`record_payment`, `apply_credit`,
+  `delete_payment`, `release_allocations`). Never set `Purchase.amount_paid` directly — it is a
+  cache of `PaymentAllocation` rows.
+- Costs use 4 decimal places (`average_cost`, `unit_cost`); money shown via `|money` (2 dp).
+- Staff-only views use `@staff_member_required`; financial views (P&L) use `superuser_required`
+  in `apps/inventory/views.py` (403 for plain staff). Summary money cards on the inventory
+  dashboard and suppliers page are wrapped in `{% if request.user.is_superuser %}`.
 - Fetch products for rendering with `Product.objects.for_display()` (active + category +
   prefetched `images`). Templates use `product.gallery` / `product.cover_url`, never
   `product.image.url` directly, so gallery-only products still get a cover.
 - The product page is rendered by `render_product_detail()` in `apps/catalog/views.py` so other
   apps (e.g. reviews re-rendering a form with errors) produce the same page. Rating macros live
   in `template/macros/reviews.html`; the reviews section is `template/reviews/_section.html`.
+- "Verified purchase" = a **Delivered** order for that user containing the product. It is stored
+  on `Review` and kept in sync by `refresh_verified_purchases()` via `Order` save/delete signals
+  (run `on_commit`). Change order status with `.save()`, not `QuerySet.update()`, or the badge
+  won't follow; in tests wrap status changes in `self.captureOnCommitCallbacks(execute=True)`.
 - Page-specific JS goes in `static/js/` and is included via `{% block scripts %}`; keep it
   vanilla and progressive (the page must work without it).
 - State-changing views are POST-only (`@require_POST`), including logout.

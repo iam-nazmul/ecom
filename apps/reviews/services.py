@@ -14,12 +14,30 @@ REVIEW_SORTS = {
 }
 
 
-def has_purchased(user, product):
-    return (
-        OrderItem.objects.filter(order__user=user, product=product)
-        .exclude(order__status=Order.Status.CANCELLED)
-        .exists()
+def has_received(user, product):
+    """True when the user has an order containing the product that was delivered."""
+    return OrderItem.objects.filter(
+        order__user=user, order__status=Order.Status.DELIVERED, product=product
+    ).exists()
+
+
+def refresh_verified_purchases(user_id, product_ids):
+    """Re-derive `verified_purchase` for the user's reviews of these products.
+
+    Called whenever an order's status changes, so a review written before delivery gets
+    the badge once the order is delivered, and loses it if the order is cancelled.
+    """
+    if not user_id or not product_ids:
+        return 0
+    received = set(
+        OrderItem.objects.filter(
+            order__user_id=user_id, order__status=Order.Status.DELIVERED, product_id__in=product_ids
+        ).values_list("product_id", flat=True)
     )
+    reviews = Review.objects.filter(user_id=user_id, product_id__in=product_ids)
+    updated = reviews.filter(product_id__in=received, verified_purchase=False).update(verified_purchase=True)
+    updated += reviews.exclude(product_id__in=received).filter(verified_purchase=True).update(verified_purchase=False)
+    return updated
 
 
 def rating_summary(product):
@@ -47,7 +65,7 @@ def save_review(form, product, user):
     review = form.save(commit=False)
     review.product = product
     review.user = user
-    review.verified_purchase = has_purchased(user, product)
+    review.verified_purchase = has_received(user, product)
     review.save()
     return review
 

@@ -38,7 +38,12 @@
     <ul class="mt-4 divide-y divide-gray-100 text-sm">
       {% for item in order.items.all() %}
         <li class="flex justify-between gap-4 py-3">
-          <span>{{ item.product_name }} <span class="text-gray-500">× {{ item.quantity }} @ {{ item.unit_price|money }}</span></span>
+          <span>
+            {{ item.product_name }} <span class="text-gray-500">× {{ item.quantity }} @ {{ item.unit_price|money }}</span>
+            {% if order.status == 'delivered' and item.product and order.user_id == request.user.pk %}
+              <a href="{{ item.product.get_absolute_url() }}#reviews" class="btn-link ml-2 whitespace-nowrap">Write a review</a>
+            {% endif %}
+          </span>
           <span class="shrink-0 font-medium">{{ item.line_total|money }}</span>
         </li>
       {% endfor %}

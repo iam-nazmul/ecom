@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Stock ledger · {{ product.name }}{% endblock %}
+
+{% block content %}
+<div class="container-page py-8">
+  <h1 class="mb-6 text-3xl font-bold tracking-tight">Inventory</h1>
+  {% set active = "ledger" %}{% include "inventory/_nav.html" %}
+
+  <div class="mt-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div>
+      <a href="{{ url('inventory:dashboard') }}" class="btn-link">&larr; All products</a>
+      <h2 class="mt-2 text-2xl font-bold tracking-tight">{{ product.name }}</h2>
+      <p class="text-sm text-gray-500">{{ product.category.name }} ·
+        <a href="{{ url('admin:catalog_product_change', product.pk) }}" class="hover:text-brand-600">Edit product</a> ·
+        <a href="{{ product.get_absolute_url() }}" class="hover:text-brand-600">View in store</a></p>
+    </div>
+    <dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {% for label, value in [
+        ("In stock", product.stock), ("Average cost", product.average_cost|money),
+        ("Price", product.price|money), ("Stock value", product.stock_value|money),
+      ] %}
+        <div class="card px-4 py-3"><dt class="text-xs text-gray-500">{{ label }}</dt><dd class="font-semibold tabular-nums">{{ value }}</dd></div>
+      {% endfor %}
+    </dl>
+  </div>
+
+  <section class="card mt-6 overflow-hidden" aria-label="Stock movements">
+    {% set show_product = false %}
+    {% include "inventory/_movements.html" %}
+    {% if movements.paginator.num_pages > 1 %}
+      <nav class="flex justify-center gap-1 border-t border-gray-100 p-3" aria-label="Pagination">
+        {% for n in movements.paginator.page_range %}
+          <a href="{{ query_with(request, page=n) }}" class="btn {{ 'btn-primary' if n == movements.number else 'btn-secondary' }} px-3 py-1.5">{{ n }}</a>
+        {% endfor %}
+      </nav>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

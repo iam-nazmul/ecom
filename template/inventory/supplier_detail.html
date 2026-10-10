@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% import "macros/forms.html" as f %}
+
+{% block title %}{{ supplier.name }} · Suppliers{% endblock %}
+
+{% block content %}
+<div class="container-page py-8">
+  <h1 class="mb-6 text-3xl font-bold tracking-tight">Suppliers &amp; payments</h1>
+  {% set active = "suppliers" %}{% include "inventory/_nav.html" %}
+
+  {# ---- Header ---- #}
+  <div class="mt-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <div>
+      <a href="{{ url('inventory:suppliers') }}" class="btn-link">&larr; All suppliers</a>
+      <h2 class="mt-2 text-2xl font-bold tracking-tight">{{ supplier.name }}</h2>
+      <p class="text-sm text-gray-500">
+        {{ supplier.contact_name or '' }}{% if supplier.phone %} · {{ supplier.phone }}{% endif %}{% if supplier.email %} · {{ supplier.email }}{% endif %}
+        · Terms: {{ 'pay on delivery' if supplier.payment_terms_days == 0 else supplier.payment_terms_days ~ ' days' }}
+        · <a href="{{ url('admin:inventory_supplier_change', supplier.pk) }}" class="hover:text-brand-600">Edit</a>
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url('admin:inventory_purchase_add') }}?supplier={{ supplier.pk }}" class="btn btn-secondary">+ New purchase</a>
+      <a href="#pay" class="btn btn-primary">Record payment</a>
+    </div>
+  </div>
+
+  <dl class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
+    {% for label, value, tone in [
+      ("Purchased (received)", account.billed|money, ""),
+      ("Paid", account.paid|money, ""),
+      ("Balance owed", account.owed|money, "text-amber-700" if account.owed else ""),
+      ("Overdue", account.overdue|money, "text-red-600" if account.overdue else ""),
+      ("Credit", account.credit|money, "text-green-700" if account.credit else ""),
+    ] %}
+      <div class="card p-4"><dt class="text-sm text-gray-500">{{ label }}</dt><dd class="mt-1 text-xl font-bold tabular-nums {{ tone }}">{{ value }}</dd></div>
+    {% endfor %}
+  </dl>
+
+  <div class="mt-8 grid gap-8 lg:grid-cols-3">
+    {# ---- Purchases ---- #}
+    <section class="card overflow-hidden lg:col-span-2" aria-labelledby="purchases-heading">
+      <h3 id="purchases-heading" class="px-5 py-4 font-semibold">Purchases</h3>
+      {% if purchases %}
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[44rem] text-sm">
+            <thead class="bg-gray-50 text-left text-xs tracking-wide text-gray-500 uppercase">
+              <tr>
+                <th class="px-5 py-2 font-medium">Purchase</th>
+                <th class="px-3 py-2 font-medium">Status</th>
+                <th class="px-3 py-2 text-right font-medium">Total</th>
+                <th class="px-3 py-2 text-right font-medium">Paid</th>
+                <th class="px-3 py-2 text-right font-medium">Due</th>
+                <th class="px-5 py-2 font-medium">Due date</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              {% for p in purchases %}
+                {% set status_tone = {'draft': 'bg-gray-100 text-gray-700', 'ordered': 'bg-blue-50 text-blue-700',
+                                      'received': 'bg-green-50 text-green-700', 'cancelled': 'bg-gray-100 text-gray-500'} %}
+                <tr class="{{ 'text-gray-400' if p.status == 'cancelled' }}">
+                  <td class="px-5 py-2.5">
+                    <a href="{{ url('admin:inventory_purchase_change', p.pk) }}" class="font-medium hover:text-brand-600">{{ p.reference }}</a>
+                    <span class="block text-xs text-gray-500">{{ p.order_date.strftime('%b %d, %Y') }}{% if p.invoice_number %} · {{ p.invoice_number }}{% endif %}</span>
+                  </td>
+                  <td class="px-3 py-2.5"><span class="badge {{ status_tone[p.status] }}">{{ p.get_status_display() }}</span></td>
+                  <td class="px-3 py-2.5 text-right tabular-nums">{{ p.total|money }}</td>
+                  <td class="px-3 py-2.5 text-right tabular-nums">{{ p.amount_paid|money }}</td>
+                  <td class="px-3 py-2.5 text-right font-semibold tabular-nums {{ 'text-red-600' if p.is_overdue else ('text-amber-700' if p.balance_due else 'text-gray-400') }}">
+                    {{ p.balance_due|money if p.balance_due else 'Paid' if p.status != 'cancelled' else '—' }}
+                  </td>
+                  <td class="px-5 py-2.5 whitespace-nowrap">
+                    {% if p.due_date %}
+                      {{ p.due_date.strftime('%b %d, %Y') }}
+                      {% if p.is_overdue %}<span class="badge ml-1 bg-red-50 text-red-700">Overdue</span>{% endif %}
+                    {% elif p.is_open %}<span class="text-xs text-gray-500">On receipt{{ ' · advance paid' if p.amount_paid }}</span>
+                    {% else %}—{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="px-5 pb-5 text-sm text-gray-500">No purchases from this supplier yet.</p>
+      {% endif %}
+    </section>
+
+    {# ---- Record payment ---- #}
+    <section id="pay" class="card scroll-mt-24 p-5" aria-labelledby="pay-heading">
+      <h3 id="pay-heading" class="font-semibold">Record a payment</h3>
+      {% if account.owed %}
+        <p class="mt-1 text-sm text-gray-600">Balance owed: <span class="font-semibold text-gray-900">{{ account.owed|money }}</span></p>
+      {% endif %}
+      <form method="post" class="mt-4 space-y-4" novalidate>
+        {{ csrf_input }}
+        {{ f.non_field_errors(form) }}
+        <div class="grid grid-cols-2 gap-3">
+          {{ f.field(form.amount) }}
+          {{ f.field(form.date) }}
+        </div>
+        {{ f.field(form.method) }}
+        {{ f.field(form.reference) }}
+        {{ f.field(form.allocate_to) }}
+        {{ f.field(form.note) }}
+        <button type="submit" class="btn btn-primary w-full">Save payment</button>
+      </form>
+      {% set unapplied = payments|sum(attribute='unallocated') %}
+      {% if unapplied > 0 %}
+        <div class="mt-5 rounded-lg bg-green-50 p-4 text-sm text-green-800 ring-1 ring-green-200">
+          <p><span class="font-semibold">{{ unapplied|money }}</span> of payments isn't applied to any purchase yet.</p>
+          <form method="post" action="{{ url('inventory:apply_credit', supplier.pk) }}" class="mt-2">
+            {{ csrf_input }}
+            <button type="submit" class="btn btn-secondary px-3 py-1.5">Apply to unpaid purchases</button>
+          </form>
+        </div>
+      {% endif %}
+    </section>
+  </div>
+
+  {# ---- Payments ---- #}
+  <section id="payments" class="card mt-8 scroll-mt-24 overflow-hidden" aria-labelledby="payments-heading">
+    <div class="flex items-center justify-between px-5 py-4">
+      <h3 id="payments-heading" class="font-semibold">Payments</h3>
+      <a href="{{ url('admin:inventory_supplierpayment_changelist') }}?supplier__id__exact={{ supplier.pk }}" class="btn-link">Manage in admin &rarr;</a>
+    </div>
+    {% if payments %}
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[44rem] text-sm">
+          <thead class="bg-gray-50 text-left text-xs tracking-wide text-gray-500 uppercase">
+            <tr>
+              <th class="px-5 py-2 font-medium">Date</th>
+              <th class="px-3 py-2 font-medium">Method</th>
+              <th class="px-3 py-2 font-medium">Reference</th>
+              <th class="px-3 py-2 text-right font-medium">Amount</th>
+              <th class="px-5 py-2 font-medium">Applied to</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for pay in payments %}
+              <tr>
+                <td class="px-5 py-2.5 whitespace-nowrap">{{ pay.date.strftime('%b %d, %Y') }}</td>
+                <td class="px-3 py-2.5">{{ pay.get_method_display() }}</td>
+                <td class="px-3 py-2.5 text-gray-600">{{ pay.reference or '—' }}{% if pay.note %}<span class="block text-xs text-gray-400">{{ pay.note }}</span>{% endif %}</td>
+                <td class="px-3 py-2.5 text-right font-semibold tabular-nums">{{ pay.amount|money }}</td>
+                <td class="px-5 py-2.5">
+                  <div class="flex flex-wrap gap-1.5">
+                    {% for a in pay.allocations.all() %}
+                      <span class="badge bg-gray-100 text-gray-700">{{ a.purchase.reference }} · {{ a.amount|money }}</span>
+                    {% endfor %}
+                    {% if pay.unallocated > 0 %}<span class="badge bg-green-50 text-green-700">Credit · {{ pay.unallocated|money }}</span>{% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="px-5 pb-5 text-sm text-gray-500">No payments recorded yet.</p>
+    {% endif %}
+  </section>
+
+  {# ---- Statement ---- #}
+  <section class="card mt-8 overflow-hidden" aria-labelledby="statement-heading">
+    <div class="px-5 py-4">
+      <h3 id="statement-heading" class="font-semibold">Account statement</h3>
+      <p class="text-xs text-gray-500">Bills are purchases when received. Balance &gt; 0 means you owe the supplier; &lt; 0 is credit.</p>
+    </div>
+    {% if statement %}
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[40rem] text-sm">
+          <thead class="bg-gray-50 text-left text-xs tracking-wide text-gray-500 uppercase">
+            <tr>
+              <th class="px-5 py-2 font-medium">Date</th>
+              <th class="px-3 py-2 font-medium">Description</th>
+              <th class="px-3 py-2 text-right font-medium">Bill</th>
+              <th class="px-3 py-2 text-right font-medium">Payment</th>
+              <th class="px-5 py-2 text-right font-medium">Balance</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for line in statement %}
+              <tr>
+                <td class="px-5 py-2.5 whitespace-nowrap text-gray-500">{{ line.date.strftime('%b %d, %Y') }}</td>
+                <td class="px-3 py-2.5">{{ line.description }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums">{{ line.bill|money if line.bill else '' }}</td>
+                <td class="px-3 py-2.5 text-right tabular-nums text-green-700">{{ line.payment|money if line.payment else '' }}</td>
+                <td class="px-5 py-2.5 text-right font-medium tabular-nums {{ 'text-green-700' if line.balance < 0 }}">{{ line.balance|money }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="px-5 pb-5 text-sm text-gray-500">Nothing received or paid yet.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

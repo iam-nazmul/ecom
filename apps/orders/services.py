@@ -4,6 +4,7 @@ from django.conf import settings
 from django.db import transaction
 
 from apps.catalog.models import Product
+from apps.inventory.services import record_sale
 
 from .models import Order, OrderItem
 
@@ -22,7 +23,7 @@ def shipping_for(subtotal):
 
 
 def place_order(cart, shipping_data, user=None):
-    """Create an order from the cart, decrementing stock atomically.
+    """Create an order from the cart, removing the stock atomically (via the inventory ledger).
 
     Raises OutOfStock (and writes nothing) if any line exceeds available stock.
     """
@@ -49,7 +50,7 @@ def place_order(cart, shipping_data, user=None):
             total=subtotal + shipping,
             **shipping_data,
         )
-        OrderItem.objects.bulk_create(
+        items = OrderItem.objects.bulk_create(
             OrderItem(
                 order=order,
                 product=products[pk],
@@ -59,10 +60,8 @@ def place_order(cart, shipping_data, user=None):
             )
             for pk, qty in quantities.items()
         )
-        for pk, qty in quantities.items():
-            product = products[pk]
-            product.stock -= qty
-            product.save(update_fields=["stock", "updated_at"])
+        # Snapshots cost of goods sold and writes the stock ledger.
+        record_sale(order, items, products)
 
     cart.clear()
     return order

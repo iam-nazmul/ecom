@@ -17,7 +17,8 @@ def money(value):
     if value is None or value == "":
         value = Decimal("0")
     amount = Decimal(value).quantize(Decimal("0.01"))
-    return f"{settings.CURRENCY_SYMBOL}{intcomma(amount)}"
+    sign = "-" if amount < 0 else ""
+    return f"{sign}{settings.CURRENCY_SYMBOL}{intcomma(abs(amount))}"
 
 
 def get_cart(request):
@@ -40,6 +41,10 @@ def query_with(request, **params):
     return f"?{encoded}" if encoded else "?"
 
 
+def percent(value):
+    return "—" if value is None else f"{value:.1f}%"
+
+
 def localtime(value, fmt="%b %d, %Y %H:%M"):
     return timezone.localtime(value).strftime(fmt)
 
@@ -57,5 +62,5 @@ def environment(**options):
             "now": timezone.now,
         }
     )
-    env.filters.update({"money": money, "localtime": localtime})
+    env.filters.update({"money": money, "localtime": localtime, "percent": percent})
     return env

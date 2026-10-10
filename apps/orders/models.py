@@ -2,8 +2,10 @@ import secrets
 import string
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
+from django.utils import timezone
 
 REFERENCE_ALPHABET = string.ascii_uppercase + string.digits
 
@@ -45,12 +47,32 @@ class Order(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    delivered_at = models.DateTimeField(
+        null=True, blank=True, editable=False, db_index=True,
+        help_text="Set when the status becomes Delivered; revenue is recognised on this date.",
+    )
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"Order {self.reference}"
+
+    def clean(self):
+        if self.pk and self.status != self.Status.CANCELLED:
+            previous = Order.objects.filter(pk=self.pk).values_list("status", flat=True).first()
+            if previous == self.Status.CANCELLED:
+                raise ValidationError({"status": "Cancelled orders can't be reopened (their stock was returned). Place a new order instead."})
+
+    def save(self, *args, **kwargs):
+        if self.status == self.Status.DELIVERED:
+            self.delivered_at = self.delivered_at or timezone.now()
+        else:
+            self.delivered_at = None
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and "status" in update_fields:
+            kwargs["update_fields"] = {*update_fields, "delivered_at"}
+        super().save(*args, **kwargs)
 
     def get_absolute_url(self):
         return reverse("orders:detail", kwargs={"reference": self.reference})
@@ -63,6 +85,10 @@ class OrderItem(models.Model):
     )
     product_name = models.CharField(max_length=200)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    unit_cost = models.DecimalField(
+        max_digits=12, decimal_places=4, null=True, blank=True,
+        help_text="Product's average cost at the time of sale (cost of goods sold). Empty for orders placed before inventory tracking.",
+    )
     quantity = models.PositiveIntegerField()
 
     def __str__(self):
@@ -71,3 +97,7 @@ class OrderItem(models.Model):
     @property
     def line_total(self):
         return self.unit_price * self.quantity
+
+    @property
+    def line_cost(self):
+        return (self.unit_cost or 0) * self.quantity

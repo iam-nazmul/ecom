@@ -1,0 +1,19 @@
+{# Staff sub-navigation. Expects: active ("dashboard" | "suppliers" | "profit_loss" | "ledger"). #}
+{% set tabs = [
+  ("dashboard", "Inventory", url("inventory:dashboard")),
+  ("suppliers", "Suppliers & payments", url("inventory:suppliers")),
+] + ([("profit_loss", "Profit & loss", url("inventory:profit_loss"))] if request.user.is_superuser else []) %}
+<div class="flex flex-col gap-4 border-b border-gray-200 pb-4 md:flex-row md:items-end md:justify-between">
+  <nav class="flex gap-1" aria-label="Staff">
+    {% for key, label, href in tabs %}
+      <a href="{{ href }}" {{ 'aria-current="page"'|safe if key == active }}
+         class="rounded-lg px-3 py-2 text-sm font-semibold {{ 'bg-brand-600 text-white' if key == active else 'text-gray-600 hover:bg-gray-100 hover:text-gray-900' }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <div class="flex flex-wrap gap-2 text-sm">
+    <a href="{{ url('admin:inventory_purchase_add') }}" class="btn btn-primary px-3 py-2">+ New purchase</a>
+    <a href="{{ url('admin:inventory_income_add') }}" class="btn btn-secondary px-3 py-2">+ Income</a>
+    <a href="{{ url('admin:inventory_expense_add') }}" class="btn btn-secondary px-3 py-2">+ Expense</a>
+    <a href="{{ url('admin:inventory_stockadjustment_add') }}" class="btn btn-secondary px-3 py-2">± Adjust stock</a>
+  </div>
+</div>

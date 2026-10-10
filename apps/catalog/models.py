@@ -58,7 +58,14 @@ class Product(models.Model):
         max_digits=10, decimal_places=2, null=True, blank=True,
         help_text="Original price; shown struck through when higher than the price.",
     )
-    stock = models.PositiveIntegerField(default=0)
+    stock = models.PositiveIntegerField(
+        default=0, help_text="Changed only through purchases, sales and stock adjustments (Inventory).",
+    )
+    average_cost = models.DecimalField(
+        max_digits=12, decimal_places=4, default=0,
+        help_text="Weighted-average unit cost, updated when stock is received.",
+    )
+    reorder_level = models.PositiveIntegerField(default=5, help_text="Flag as low stock at or below this quantity.")
     image = models.ImageField(
         "cover image", upload_to="products/%Y/%m/", blank=True,
         help_text="Shown on product cards and first in the gallery.",
@@ -79,6 +86,14 @@ class Product(models.Model):
 
     def get_absolute_url(self):
         return reverse("catalog:product_detail", kwargs={"slug": self.slug})
+
+    @property
+    def is_low_stock(self):
+        return self.stock <= self.reorder_level
+
+    @property
+    def stock_value(self):
+        return self.stock * self.average_cost
 
     @property
     def in_stock(self):

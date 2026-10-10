@@ -45,7 +45,7 @@ def checkout(request):
 
 
 def detail(request, reference):
-    order = get_object_or_404(Order.objects.prefetch_related("items"), reference=reference)
+    order = get_object_or_404(Order.objects.prefetch_related("items__product"), reference=reference)
     owns = request.user.is_authenticated and order.user_id == request.user.pk
     placed_here = reference in request.session.get(RECENT_ORDERS_KEY, [])
     if not (owns or placed_here or request.user.is_staff):

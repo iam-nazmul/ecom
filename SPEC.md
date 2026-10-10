@@ -8,6 +8,8 @@ Gunicorn behind Nginx via Docker Compose.
 
 - Customers can browse a catalog, search/filter products, manage a cart, and place an order.
 - Staff manage categories, products, stock and orders through the Django admin.
+- Staff buy stock from suppliers (purchase orders), keep an auditable stock ledger, record
+  expenses and see profit & loss.
 - One command (`docker compose up --build`) brings up a working stack.
 - The codebase stays simple: no SPA, no JS framework, no payment gateway.
 
@@ -64,20 +66,107 @@ Gunicorn behind Nginx via Docker Compose.
 ### reviews
 - **Review** — `product` (FK, CASCADE, `related_name="reviews"`), `user` (FK, CASCADE),
   `rating` (1–5, DB check constraint), `title` (optional, ≤120), `body` (10–2000 chars),
-  `verified_purchase` (set on save: the user has a non-cancelled order containing the product),
+  `verified_purchase` — **the reviewer bought the product and received it**: they have an
+  order (linked to their account) containing the product whose status is **Delivered**.
+  Computed when the review is saved and re-computed whenever one of the user's orders is
+  saved or deleted (signals in `apps/reviews/signals.py`), so marking an order Delivered adds
+  the badge to existing reviews and cancelling/deleting it removes it. Guest orders and
+  pending/processing/shipped orders don't count. Read-only in the admin.
   `is_approved` ("published", default true; staff can hide), `created_at`, `updated_at`.
   Unique per (`product`, `user`): one review per customer per product; re-submitting edits it.
 - Only **published** reviews count towards ratings. `Product.objects.for_display()` annotates
   `rating_avg` / `rating_count`.
 
-## 4. Pricing rules
+## 4. Inventory, purchasing & accounting (`apps/inventory`)
+
+### Models
+- **Supplier** — `name` (unique), contact, phone, email, address, notes,
+  `payment_terms_days` (default 30; 0 = pay on delivery), `is_active`.
+- **Purchase** (purchase order, reference `PO-00001`) — `supplier`, `status`
+  (`draft` → `ordered` → `received`, or `cancelled`), `order_date`, `expected_date`,
+  `received_at`, `invoice_number`, `other_costs` (shipping/customs), notes, and
+  `amount_paid` — a read-only cache of the payments allocated to it.
+  Derived: items total, total (= items + other costs), balance due, payment status
+  (Unpaid / Partly paid / Paid), `due_date` (received date + supplier terms) and overdue
+  (balance > 0 after the due date). Items and costs lock once received or cancelled.
+- **PurchaseItem** — `product`, `quantity` (≥1), `unit_cost` (supplier price).
+- **StockMovement** — append-only ledger: `product`, `kind` (`opening`, `purchase`, `sale`,
+  `return`, `adjustment`), signed `quantity`, `unit_cost`, `balance_after`, links to the
+  purchase/order, reference, note, user, `created_at`. Σ quantity = Product.stock.
+- **StockAdjustment** — manual correction: `product`, signed `quantity`, `reason` (count
+  correction, damaged/expired, lost/stolen, opening stock, other), optional `unit_cost`
+  (for added stock), note, user. Immutable once saved; cannot remove more than in stock.
+- **SupplierPayment** — `supplier`, `date` (not in the future), `amount`, `method` (cash,
+  bank transfer, bKash, Nagad, Rocket, cheque, card, other), `reference` (transaction /
+  cheque no.), note, user. **PaymentAllocation** — the part of a payment applied to one
+  purchase (unique per payment + purchase). The unallocated part of a payment is supplier
+  credit.
+- **Expense** — `date`, `category` (rent, salaries, utilities, marketing, delivery, fees,
+  packaging, other), description, `amount`, paid to.
+- **Income** ("other income") — money earned outside product sales: `date`, `category`
+  (services, commission & affiliate, supplier rebates, interest, sale of scrap/old equipment,
+  rental, other), description, `amount`, received from.
+- Added to **Product**: `average_cost` (weighted average, read-only), `reorder_level`
+  (default 5). `stock` is read-only in the admin — it changes only via the ledger.
+- Added to **Order**: `delivered_at` (set when status becomes Delivered, cleared otherwise).
+  Cancelled orders can't be reopened. **OrderItem**: `unit_cost` (cost snapshot at sale;
+  null for pre-inventory orders).
+
+### Rules
+- **Every stock change** goes through `record_movement()` on a row-locked product, writing
+  one ledger row and updating stock + average cost in the same transaction.
+- **Weighted-average cost**: incoming stock (purchases, returns, positive adjustments)
+  re-averages: `(stock × avg + qty × cost) / (stock + qty)`. Outgoing stock is valued at the
+  current average and doesn't change it.
+- **Landed cost**: a purchase's `other_costs` are spread across its items in proportion to
+  line value and added to their unit cost before averaging.
+- **Receiving** (admin action, or "Receive" on the dashboard): only draft/ordered purchases
+  with items; adds all items to stock at landed cost; status → received. Not reversible —
+  correct mistakes with a stock adjustment.
+- **Checkout** records `unit_cost` = current average on each order item and a `sale` movement.
+- **Cancelling an order** returns its items to stock (`return` movement at the sale cost), once.
+- **Migration**: existing stock got an `opening` row at cost 0; existing delivered orders got
+  `delivered_at` = last update. Pre-inventory sales have no cost and are flagged in the P&L.
+
+### Supplier payments (accounts payable, `apps/inventory/payments.py`)
+- **Supplier balance** = Σ totals of *received* purchases − Σ payments. Positive = owed to the
+  supplier; negative = supplier credit (advance / overpayment). Open purchase orders are
+  commitments, not debt.
+- **Recording a payment** allocates it (in one transaction, rows locked):
+  - *Oldest unpaid first* (default): received purchases by receive date; any excess stays
+    as credit (open POs are never prepaid automatically);
+  - *a specific purchase* (an open PO = advance payment): that one first, excess oldest-first;
+  - *keep as credit*: nothing allocated.
+- **Apply credit** allocates unallocated payment amounts (oldest payment first) to unpaid
+  received purchases (oldest first).
+- **Cancelling a purchase** releases its allocations — the money becomes credit.
+- **Deleting a payment** (admin) removes its allocations and recomputes `amount_paid`.
+  Payment amount/supplier/date/method are fixed after saving; reference and note are editable.
+- Payments are cash movements, not P&L items (stock cost reaches the P&L as COGS when sold).
+- Migration: each purchase's old `amount_paid` became a payment (method "other").
+
+### Profit & loss
+- Revenue is recognised on **delivery** (cash on delivery): orders with status Delivered and
+  `delivered_at` in the period.
+- Income = product sales + shipping charged. COGS = Σ `unit_cost` × qty of those orders.
+- Gross profit = sales revenue − COGS. Operating profit = gross profit − operating expenses
+  (by `Expense.date`) ± stock adjustments at cost (write-offs negative, count gains positive).
+  **Net profit = operating profit + other income** (by `Income.date`).
+- Total income = product sales + shipping charged + other income. Margins are measured against
+  sales revenue (sales + shipping) only.
+- Purchases are **not** expenses (stock is an asset until sold); shown for information.
+- Report also shows margins, delivered orders, average order value, expenses by category,
+  other income by category, monthly breakdown (incl. other income) with bars, top 10 products by profit, open (undelivered) order value,
+  and a warning count of sold items with unknown cost.
+
+## 5. Pricing rules
 
 - Subtotal = Σ unit price × quantity (Decimal, never float).
 - Shipping = `SHIPPING_FLAT_RATE` (default 5.00) unless subtotal ≥ `FREE_SHIPPING_THRESHOLD`
-  (default 50.00), then 0. Empty cart → 0.
+  (default 5000.00), then 0. Empty cart → 0.
 - Currency symbol comes from `CURRENCY_SYMBOL` (default `৳`, Bangladeshi taka).
 
-## 5. Pages & routes
+## 6. Pages & routes
 
 | Route                         | Name                     | Description |
 |-------------------------------|--------------------------|-------------|
@@ -97,10 +186,17 @@ Gunicorn behind Nginx via Docker Compose.
 | `/accounts/login/`            | `accounts:login`         | Log in |
 | `/accounts/logout/` (POST)    | `accounts:logout`        | Log out |
 | `/accounts/orders/`           | `accounts:orders`        | Logged-in user's order history |
+| `/staff/inventory/`           | `inventory:dashboard`    | Staff: KPIs (units, stock value at cost/retail, potential profit, owed to suppliers), low stock, open POs with Receive, stock by product, recent movements |
+| `/staff/inventory/products/<id>/` | `inventory:ledger`   | Staff: one product's stock ledger with running balance |
+| `/staff/inventory/purchases/<id>/receive/` (POST) | `inventory:receive` | Staff: receive an open purchase into stock |
+| `/staff/suppliers/`           | `inventory:suppliers`    | Staff: totals (owed, overdue, credit, open POs) and each supplier's terms, purchased, paid, balance, overdue, last payment |
+| `/staff/suppliers/<id>/`      | `inventory:supplier`     | Staff: supplier account — KPIs, purchases with paid/due/due date/overdue, **Record payment** form (POST), payments with allocations, account statement with running balance |
+| `/staff/suppliers/<id>/apply-credit/` (POST) | `inventory:apply_credit` | Staff: apply unallocated payments to unpaid purchases |
+| `/staff/reports/profit-loss/` | `inventory:profit_loss`  | **Superusers only** (staff get 403; tab hidden): P&L for `?range=this_month|last_month|last_30|last_90|this_year` (default this year) or `?start=YYYY-MM-DD&end=YYYY-MM-DD` |
 | `/admin/`                     | —                        | Django admin |
 | `/healthz`                    | `core:healthz`           | Returns `ok` (used by container healthcheck) |
 
-## 6. Checkout behaviour
+## 7. Checkout behaviour
 
 1. Cart must be non-empty, otherwise redirect to cart with a message.
 2. Form is prefilled from the logged-in user (name, email).
@@ -111,7 +207,7 @@ Gunicorn behind Nginx via Docker Compose.
 5. On success the cart is cleared, the order reference is remembered in the session, and
    the user is redirected to `orders:detail`.
 
-## 7. Admin
+## 8. Admin
 
 - Category: list name/slug/active, prepopulated slug, search.
 - Product: list name/category/price/stock/active/featured with `list_editable` for price,
@@ -122,10 +218,15 @@ Gunicorn behind Nginx via Docker Compose.
 - Review: list product/user/rating/title/verified/published/created; `published` editable;
   filter by published/rating/verified/date; search title/body/product/user; bulk
   publish/hide actions; verified flag read-only.
+- Inventory: Suppliers (terms, balance, link to statement); Purchases (inline items with
+  product autocomplete, totals/payment columns, payments received list + due date, actions
+  *Mark ordered* / *Receive into stock* / *Cancel*); Supplier payments (add with "apply to"
+  purchase or keep-as-credit, read-only allocations, delete restores balances); Stock movements
+  (read-only); Stock adjustments (add-only); Expenses; Other income.
 - Order: list reference/name/email/status/total/created; filter by status/date; inline
   read-only items; status editable.
 
-## 8. UI
+## 9. UI
 
 - Responsive Tailwind layout: sticky header (logo, search, Shop link, cart badge with
   count, account menu), flash messages, footer.
@@ -146,28 +247,37 @@ Gunicorn behind Nginx via Docker Compose.
   review; "Your review" with edit/delete and a notice if moderators hid it); review list with
   stars, title, "First L." author name, date, *Verified purchase* / *You* badges; sort
   (newest / highest / lowest, `?reviews_sort=`) and pagination (5 per page, `?reviews_page=`).
+- Staff pages (Inventory, Profit & loss, ledger) share a sub-nav with quick links to add a
+  purchase, income, expense or stock adjustment; an *Inventory* header link appears for staff.
 - Custom 404 and 500 pages.
 
-## 9. Operations
+## 10. Operations
 
 - Configuration is entirely environment-driven (see `.env.example`).
 - `web` container entrypoint: wait for DB (compose healthcheck), `migrate`,
   `collectstatic --clear`, optionally create a superuser from `DJANGO_SUPERUSER_*`,
   optionally seed demo data when `SEED_DEMO_DATA=1` (including 3 generated gallery images
   per demo product that has none; `seed_demo --no-images` skips them; demo specs; and 2–6
-  reviews per unreviewed demo product from demo users without usable passwords), then start Gunicorn.
+  reviews per unreviewed demo product from demo users without usable passwords, plus one
+  delivered demo order per reviewer so their badges are real), then start Gunicorn.
 - Static files collected into a shared volume and served by Nginx with long cache headers
   (hashed filenames via `ManifestStaticFilesStorage`). Uploads go to a `media` volume.
 - Postgres data persists in the `postgres_data` volume.
 - Behind a proxy: `SECURE_PROXY_SSL_HEADER`, `CSRF_TRUSTED_ORIGINS`, `ALLOWED_HOSTS` from env.
 
-## 10. Acceptance criteria
+## 11. Acceptance criteria
 
 - `docker compose up --build` → storefront reachable at `http://localhost:8080`.
 - Gunicorn reports 4 booted workers in the `web` logs.
 - Demo data appears when seeding is enabled; admin login works with the configured superuser.
 - A guest can add items to the cart, check out, and see the confirmation page; stock decreases.
-- A logged-in customer can rate and review a product once, edit or delete it; buyers get a
-  *Verified purchase* badge; hidden reviews don't affect the rating.
+- Receiving a purchase raises stock and re-averages cost; checkout and cancellation write the
+  ledger; Σ ledger quantity equals stock for every product.
+- The P&L for a period shows delivered sales, COGS, expenses, adjustments and net profit.
+- Paying a supplier reduces what is owed; partial payments, overdue bills, advances and
+  credit are tracked; each purchase's paid amount equals the sum of its allocations.
+- A logged-in customer can rate and review a product once, edit or delete it; customers whose order
+  containing it was delivered get a *Verified purchase* badge (a "Write a review" link appears
+  on delivered orders); hidden reviews don't affect the rating.
 - Ordering more than available stock fails without creating an order.
 - `docker compose exec web python manage.py test` passes.

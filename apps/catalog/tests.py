@@ -138,7 +138,7 @@ class GalleryTests(TestCase):
         self.assertContains(self.client.get(url), "images-TOTAL_FORMS")
         data = {
             "category": self.product.category.pk, "name": "Camera", "slug": "camera", "description": "",
-            "price": "10.00", "stock": "5", "is_active": "on",
+            "price": "10.00", "stock": "5", "reorder_level": "5", "is_active": "on",
             "images-TOTAL_FORMS": "2", "images-INITIAL_FORMS": "0",
             "images-MIN_NUM_FORMS": "0", "images-MAX_NUM_FORMS": "1000",
             "images-0-image": upload("a.png"), "images-0-sort_order": "0", "images-0-alt_text": "A",
@@ -217,7 +217,7 @@ class DetailsSectionTests(TestCase):
         self.assertContains(self.client.get(url), "specs-TOTAL_FORMS")
         data = {
             "category": self.product.category.pk, "name": "Phone", "slug": "phone",
-            "summary": "A great phone.", "description": "", "price": "10.00", "stock": "5", "is_active": "on",
+            "summary": "A great phone.", "description": "", "price": "10.00", "stock": "5", "reorder_level": "5", "is_active": "on",
             "images-TOTAL_FORMS": "0", "images-INITIAL_FORMS": "0",
             "images-MIN_NUM_FORMS": "0", "images-MAX_NUM_FORMS": "1000",
             "specs-TOTAL_FORMS": "1", "specs-INITIAL_FORMS": "0",
