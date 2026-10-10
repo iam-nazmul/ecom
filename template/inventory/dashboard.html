@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Inventory{% endblock %}
+
+{% macro kpi(label, value, hint="", tone="text-gray-900") %}
+  <div class="card p-5">
+    <p class="text-sm text-gray-500">{{ label }}</p>
+    <p class="mt-1 text-2xl font-bold tracking-tight {{ tone }}">{{ value }}</p>
+    {% if hint %}<p class="mt-1 text-xs text-gray-500">{{ hint }}</p>{% endif %}
+  </div>
+{% endmacro %}
+
+{% block content %}
+<div class="container-page py-8">
+  <h1 class="mb-6 text-3xl font-bold tracking-tight">Inventory</h1>
+  {% set active = "dashboard" %}{% include "inventory/_nav.html" %}
+
+  {% if request.user.is_superuser %}{# stock value & payables summary: superusers only #}
+  <div class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
+    {{ kpi("Units in stock", "{:,}".format(summary.units)) }}
+    {{ kpi("Stock value (cost)", summary.cost_value|money, "Units × average cost") }}
+    {{ kpi("Stock value (retail)", summary.retail_value|money, "Units × selling price") }}
+    {{ kpi("Potential gross profit", summary.potential_profit|money, "If all stock sells at list price", "text-green-700") }}
+    {{ kpi("Owed to suppliers", summary.payable|money,
+           (summary.overdue|money ~ " overdue") if summary.overdue else "Received stock not yet paid for",
+           "text-red-600" if summary.overdue else ("text-amber-700" if summary.payable else "text-gray-900")) }}
+  </div>
+  {% endif %}
+
+  <div class="mt-8 grid gap-8 lg:grid-cols-2">
+    <section class="card overflow-hidden" aria-labelledby="low-heading">
+      <div class="flex items-center justify-between px-5 py-4">
+        <h2 id="low-heading" class="font-semibold">Low stock <span class="badge ml-1 bg-red-50 text-red-700">{{ summary.low_stock|length }}</span></h2>
+        <a href="{{ url('admin:inventory_purchase_add') }}" class="btn-link">Reorder &rarr;</a>
+      </div>
+      {% if summary.low_stock %}
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-left text-xs tracking-wide text-gray-500 uppercase">
+            <tr><th class="px-5 py-2 font-medium">Product</th><th class="px-3 py-2 text-right font-medium">Stock</th><th class="px-5 py-2 text-right font-medium">Reorder at</th></tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for p in summary.low_stock %}
+              <tr>
+                <td class="px-5 py-2.5"><a href="{{ url('inventory:ledger', p.pk) }}" class="font-medium hover:text-brand-600">{{ p.name }}</a></td>
+                <td class="px-3 py-2.5 text-right font-semibold tabular-nums {{ 'text-red-600' if p.stock == 0 else 'text-amber-700' }}">{{ p.stock }}</td>
+                <td class="px-5 py-2.5 text-right text-gray-500 tabular-nums">{{ p.reorder_level }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="px-5 pb-5 text-sm text-gray-500">Everything is above its reorder level.</p>
+      {% endif %}
+    </section>
+
+    <section class="card overflow-hidden" aria-labelledby="open-heading">
+      <div class="flex items-center justify-between px-5 py-4">
+        <h2 id="open-heading" class="font-semibold">Open purchase orders <span class="badge ml-1 bg-blue-50 text-blue-700">{{ summary.open_purchases|length }}</span></h2>
+        <a href="{{ url('admin:inventory_purchase_changelist') }}" class="btn-link">All purchases &rarr;</a>
+      </div>
+      {% if summary.open_purchases %}
+        <ul class="divide-y divide-gray-100 text-sm">
+          {% for po in summary.open_purchases %}
+            <li class="flex items-center gap-4 px-5 py-3">
+              <div class="min-w-0 flex-1">
+                <a href="{{ url('admin:inventory_purchase_change', po.pk) }}" class="font-medium hover:text-brand-600">{{ po.reference }}</a>
+                <span class="badge ml-1 {{ 'bg-blue-50 text-blue-700' if po.status == 'ordered' else 'bg-gray-100 text-gray-700' }}">{{ po.get_status_display() }}</span>
+                <p class="truncate text-gray-500">{{ po.supplier.name }} · {{ po.items.all()|length }} line{{ 's' if po.items.all()|length != 1 }} · {{ po.order_date.strftime('%b %d, %Y') }}</p>
+              </div>
+              <span class="font-semibold tabular-nums">{{ po.total|money }}</span>
+              <form method="post" action="{{ url('inventory:receive', po.pk) }}">
+                {{ csrf_input }}
+                <button type="submit" class="btn btn-secondary px-3 py-1.5" {{ 'disabled' if not po.items.all() }}>Receive</button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="px-5 pb-5 text-sm text-gray-500">No purchase orders waiting to be received.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="card mt-8 overflow-hidden" aria-labelledby="stock-heading">
+    <h2 id="stock-heading" class="px-5 py-4 font-semibold">Stock by product</h2>
+    <div class="overflow-x-auto">
+      <table class="w-full min-w-[40rem] text-sm">
+        <thead class="bg-gray-50 text-left text-xs tracking-wide text-gray-500 uppercase">
+          <tr>
+            <th class="px-5 py-2 font-medium">Product</th>
+            <th class="px-3 py-2 text-right font-medium">Stock</th>
+            <th class="px-3 py-2 text-right font-medium">Avg cost</th>
+            <th class="px-3 py-2 text-right font-medium">Price</th>
+            <th class="px-3 py-2 text-right font-medium">Margin</th>
+            <th class="px-5 py-2 text-right font-medium">Value (cost)</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for p in products %}
+            {% set margin = ((p.price - p.average_cost) / p.price * 100) if p.price and p.average_cost else None %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-5 py-2.5">
+                <a href="{{ url('inventory:ledger', p.pk) }}" class="font-medium hover:text-brand-600">{{ p.name }}</a>
+                <span class="text-gray-400">· {{ p.category.name }}</span>
+              </td>
+              <td class="px-3 py-2.5 text-right tabular-nums {{ 'font-semibold text-amber-700' if p.is_low_stock }}">{{ p.stock }}</td>
+              <td class="px-3 py-2.5 text-right tabular-nums">{{ p.average_cost|money if p.average_cost else '—' }}</td>
+              <td class="px-3 py-2.5 text-right tabular-nums">{{ p.price|money }}</td>
+              <td class="px-3 py-2.5 text-right tabular-nums {{ 'text-red-600' if margin is not none and margin < 0 }}">{{ margin|percent }}</td>
+              <td class="px-5 py-2.5 text-right font-medium tabular-nums">{{ p.stock_value|money }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if products.paginator.num_pages > 1 %}
+      <nav class="flex justify-center gap-1 border-t border-gray-100 p-3" aria-label="Pagination">
+        {% for n in products.paginator.page_range %}
+          <a href="{{ query_with(request, page=n) }}" class="btn {{ 'btn-primary' if n == products.number else 'btn-secondary' }} px-3 py-1.5">{{ n }}</a>
+        {% endfor %}
+      </nav>
+    {% endif %}
+  </section>
+
+  <section class="card mt-8 overflow-hidden" aria-labelledby="moves-heading">
+    <div class="flex items-center justify-between px-5 py-4">
+      <h2 id="moves-heading" class="font-semibold">Recent stock movements</h2>
+      <a href="{{ url('admin:inventory_stockmovement_changelist') }}" class="btn-link">Full ledger &rarr;</a>
+    </div>
+    {% include "inventory/_movements.html" %}
+  </section>
+</div>
+{% endblock %}

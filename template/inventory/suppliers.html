@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Suppliers & payments{% endblock %}
+
+{% block content %}
+<div class="container-page py-8">
+  <h1 class="mb-6 text-3xl font-bold tracking-tight">Suppliers &amp; payments</h1>
+  {% set active = "suppliers" %}{% include "inventory/_nav.html" %}
+
+  {% if request.user.is_superuser %}{# payables summary: superusers only #}
+  <div class="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+    {% for label, value, hint, tone in [
+      ("Owed to suppliers", totals.owed, "Received stock not yet paid for", "text-amber-700" if totals.owed else "text-gray-900"),
+      ("Overdue", totals.overdue, "Past the supplier's payment terms", "text-red-600" if totals.overdue else "text-gray-900"),
+      ("Supplier credit", totals.credit, "Advances / overpayments to use", "text-green-700" if totals.credit else "text-gray-900"),
+      ("Open purchase orders", totals.open_orders, "Ordered, not yet received", "text-gray-900"),
+    ] %}
+      <div class="card p-5">
+        <p class="text-sm text-gray-500">{{ label }}</p>
+        <p class="mt-1 text-2xl font-bold tracking-tight {{ tone }}">{{ value|money }}</p>
+        <p class="mt-1 text-xs text-gray-500">{{ hint }}</p>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <section class="card mt-8 overflow-hidden" aria-labelledby="suppliers-heading">
+    <div class="flex items-center justify-between px-5 py-4">
+      <h2 id="suppliers-heading" class="font-semibold">Suppliers</h2>
+      <a href="{{ url('admin:inventory_supplier_add') }}" class="btn-link">+ Add supplier</a>
+    </div>
+    {% if accounts %}
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[52rem] text-sm">
+          <thead class="bg-gray-50 text-left text-xs tracking-wide text-gray-500 uppercase">
+            <tr>
+              <th class="px-5 py-2 font-medium">Supplier</th>
+              <th class="px-3 py-2 text-right font-medium">Terms</th>
+              <th class="px-3 py-2 text-right font-medium">Purchased</th>
+              <th class="px-3 py-2 text-right font-medium">Paid</th>
+              <th class="px-3 py-2 text-right font-medium">Balance</th>
+              <th class="px-3 py-2 text-right font-medium">Overdue</th>
+              <th class="px-3 py-2 font-medium">Last payment</th>
+              <th class="px-5 py-2"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for a in accounts %}
+              <tr class="hover:bg-gray-50">
+                <td class="px-5 py-3">
+                  <a href="{{ url('inventory:supplier', a.supplier.pk) }}" class="font-medium hover:text-brand-600">{{ a.supplier.name }}</a>
+                  {% if not a.supplier.is_active %}<span class="badge ml-1 bg-gray-100 text-gray-600">Inactive</span>{% endif %}
+                  {% if a.supplier.phone %}<span class="block text-xs text-gray-500">{{ a.supplier.contact_name }} · {{ a.supplier.phone }}</span>{% endif %}
+                </td>
+                <td class="px-3 py-3 text-right text-gray-500 tabular-nums">{{ 'On delivery' if a.supplier.payment_terms_days == 0 else a.supplier.payment_terms_days ~ ' days' }}</td>
+                <td class="px-3 py-3 text-right tabular-nums">{{ a.billed|money }}</td>
+                <td class="px-3 py-3 text-right tabular-nums">{{ a.paid|money }}</td>
+                <td class="px-3 py-3 text-right font-semibold tabular-nums">
+                  {% if a.owed %}<span class="text-amber-700">{{ a.owed|money }} owed</span>
+                  {% elif a.credit %}<span class="text-green-700">{{ a.credit|money }} credit</span>
+                  {% else %}<span class="text-gray-500">Settled</span>{% endif %}
+                </td>
+                <td class="px-3 py-3 text-right tabular-nums {{ 'font-semibold text-red-600' if a.overdue else 'text-gray-400' }}">{{ a.overdue|money if a.overdue else '—' }}</td>
+                <td class="px-3 py-3 text-gray-500">{{ a.last_payment.strftime('%b %d, %Y') if a.last_payment else '—' }}</td>
+                <td class="px-5 py-3 text-right">
+                  <a href="{{ url('inventory:supplier', a.supplier.pk) }}#pay" class="btn btn-secondary px-3 py-1.5">{{ 'Pay' if a.owed else 'Open' }}</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="px-5 pb-5 text-sm text-gray-500">No suppliers yet. <a href="{{ url('admin:inventory_supplier_add') }}" class="btn-link">Add your first supplier</a>.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

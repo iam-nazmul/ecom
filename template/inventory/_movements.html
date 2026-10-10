@@ -1,0 +1,48 @@
+{# Stock movement table. Expects: movements; optional show_product (default true). #}
+{% set show_product = show_product if show_product is defined else true %}
+{% set tone = {
+  'opening': 'bg-gray-100 text-gray-700', 'purchase': 'bg-green-50 text-green-700',
+  'sale': 'bg-blue-50 text-blue-700', 'return': 'bg-violet-50 text-violet-700',
+  'adjustment': 'bg-amber-50 text-amber-800',
+} %}
+{% if movements %}
+  <div class="overflow-x-auto">
+    <table class="w-full min-w-[44rem] text-sm">
+      <thead class="bg-gray-50 text-left text-xs tracking-wide text-gray-500 uppercase">
+        <tr>
+          <th class="px-5 py-2 font-medium">Date</th>
+          {% if show_product %}<th class="px-3 py-2 font-medium">Product</th>{% endif %}
+          <th class="px-3 py-2 font-medium">Type</th>
+          <th class="px-3 py-2 font-medium">Reference</th>
+          <th class="px-3 py-2 text-right font-medium">Qty</th>
+          <th class="px-3 py-2 text-right font-medium">Unit cost</th>
+          <th class="px-3 py-2 text-right font-medium">Value</th>
+          <th class="px-5 py-2 text-right font-medium">Balance</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for m in movements %}
+          <tr>
+            <td class="px-5 py-2.5 whitespace-nowrap text-gray-500">{{ m.created_at|localtime('%b %d, %Y %H:%M') }}</td>
+            {% if show_product %}
+              <td class="px-3 py-2.5"><a href="{{ url('inventory:ledger', m.product_id) }}" class="font-medium hover:text-brand-600">{{ m.product.name }}</a></td>
+            {% endif %}
+            <td class="px-3 py-2.5"><span class="badge {{ tone.get(m.kind, '') }}">{{ m.get_kind_display() }}</span></td>
+            <td class="px-3 py-2.5 text-gray-600">
+              {% if m.purchase_id %}<a href="{{ url('admin:inventory_purchase_change', m.purchase_id) }}" class="hover:text-brand-600">{{ m.reference }}</a>
+              {% elif m.order_id %}<a href="{{ url('admin:orders_order_change', m.order_id) }}" class="hover:text-brand-600">#{{ m.reference }}</a>
+              {% else %}{{ m.reference or '—' }}{% endif %}
+              {% if m.note %}<span class="block text-xs text-gray-400">{{ m.note }}</span>{% endif %}
+            </td>
+            <td class="px-3 py-2.5 text-right font-semibold tabular-nums {{ 'text-green-700' if m.quantity > 0 else 'text-red-600' }}">{{ '%+d'|format(m.quantity) }}</td>
+            <td class="px-3 py-2.5 text-right tabular-nums">{{ m.unit_cost|money }}</td>
+            <td class="px-3 py-2.5 text-right tabular-nums">{{ m.value|money }}</td>
+            <td class="px-5 py-2.5 text-right font-medium tabular-nums">{{ m.balance_after }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p class="px-5 pb-5 text-sm text-gray-500">No stock movements yet.</p>
+{% endif %}

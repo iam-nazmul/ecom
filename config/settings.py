@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.orders",
     "apps.accounts",
     "apps.reviews",
+    "apps.inventory",
 ]
 
 MIDDLEWARE = [
@@ -98,7 +99,7 @@ LOGIN_REDIRECT_URL = "core:home"
 LOGOUT_REDIRECT_URL = "core:home"
 
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
+TIME_ZONE = os.environ.get("DJANGO_TIME_ZONE", "Asia/Dhaka")
 USE_I18N = True
 USE_TZ = True
 
@@ -141,5 +142,5 @@ LOGGING = {
 # Store settings
 CURRENCY_SYMBOL = os.environ.get("CURRENCY_SYMBOL", "৳")
 SHIPPING_FLAT_RATE = Decimal(os.environ.get("SHIPPING_FLAT_RATE", "5.00"))
-FREE_SHIPPING_THRESHOLD = Decimal(os.environ.get("FREE_SHIPPING_THRESHOLD", "50.00"))
+FREE_SHIPPING_THRESHOLD = Decimal(os.environ.get("FREE_SHIPPING_THRESHOLD", "5000.00"))
 PRODUCTS_PER_PAGE = 12

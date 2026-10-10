@@ -65,17 +65,31 @@ class ReviewSubmitTests(TestCase):
         review = Review.objects.get()
         self.assertEqual(review.rating, 2)
 
-    def test_verified_purchase(self):
-        make_order(self.user, self.product)
-        self.client.force_login(self.user)
-        self.client.post(self.url, self.data)
-        self.assertTrue(Review.objects.get().verified_purchase)
-
-    def test_cancelled_order_not_verified(self):
-        make_order(self.user, self.product, status=Order.Status.CANCELLED)
+    def test_pending_order_not_verified(self):
+        make_order(self.user, self.product)  # pending: bought, not yet received
         self.client.force_login(self.user)
         self.client.post(self.url, self.data)
         self.assertFalse(Review.objects.get().verified_purchase)
+
+    def test_delivered_order_verified(self):
+        make_order(self.user, self.product, status=Order.Status.DELIVERED)
+        self.client.force_login(self.user)
+        self.client.post(self.url, self.data)
+        self.assertTrue(Review.objects.get().verified_purchase)
+        self.assertContains(self.client.get(self.product.get_absolute_url()), "it was delivered to them")
+
+    def test_other_users_delivery_does_not_count(self):
+        make_order(make_user("bob"), self.product, status=Order.Status.DELIVERED)
+        self.client.force_login(self.user)
+        self.client.post(self.url, self.data)
+        self.assertFalse(Review.objects.get().verified_purchase)
+
+    def test_guest_order_does_not_count(self):
+        make_order(None, self.product, status=Order.Status.DELIVERED)
+        self.client.force_login(self.user)
+        self.client.post(self.url, self.data)
+        self.assertFalse(Review.objects.get().verified_purchase)
+
 
     def test_invalid_rating_and_body_rejected(self):
         self.client.force_login(self.user)
@@ -98,6 +112,69 @@ class ReviewSubmitTests(TestCase):
         make_review(self.product, self.user, 5)
         with self.assertRaises(IntegrityError):
             make_review(self.product, self.user, 3)
+
+
+class VerifiedSyncTests(TestCase):
+    """The badge follows the order: delivered → verified; cancelled/deleted → not."""
+
+    def setUp(self):
+        self.product = make_product(name="Lamp", slug="lamp")
+        self.user = make_user()
+        self.order = make_order(self.user, self.product)  # pending
+        self.review = make_review(self.product, self.user, 5)
+
+    def set_status(self, status):
+        with self.captureOnCommitCallbacks(execute=True):
+            self.order.status = status
+            self.order.save()
+        self.review.refresh_from_db()
+
+    def test_marking_delivered_verifies_existing_review(self):
+        self.assertFalse(self.review.verified_purchase)
+        self.set_status(Order.Status.SHIPPED)
+        self.assertFalse(self.review.verified_purchase)
+        self.set_status(Order.Status.DELIVERED)
+        self.assertTrue(self.review.verified_purchase)
+
+    def test_cancelling_removes_badge(self):
+        self.set_status(Order.Status.DELIVERED)
+        self.set_status(Order.Status.CANCELLED)
+        self.assertFalse(self.review.verified_purchase)
+
+    def test_badge_kept_while_another_delivered_order_exists(self):
+        self.set_status(Order.Status.DELIVERED)
+        with self.captureOnCommitCallbacks(execute=True):
+            make_order(self.user, self.product, status=Order.Status.DELIVERED)
+        self.set_status(Order.Status.CANCELLED)
+        self.assertTrue(self.review.verified_purchase)
+
+    def test_deleting_order_removes_badge(self):
+        self.set_status(Order.Status.DELIVERED)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.order.delete()
+        self.review.refresh_from_db()
+        self.assertFalse(self.review.verified_purchase)
+
+    def test_admin_status_change_verifies(self):
+        self.client.force_login(User.objects.create_superuser("root", "r@example.com", "pw"))
+        changelist = reverse("admin:orders_order_changelist")
+        data = {
+            "action": "", "form-TOTAL_FORMS": "1", "form-INITIAL_FORMS": "1",
+            "form-MIN_NUM_FORMS": "0", "form-MAX_NUM_FORMS": "1000",
+            "form-0-id": str(self.order.pk), "form-0-status": Order.Status.DELIVERED, "_save": "Save",
+        }
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(changelist, data)
+        self.assertEqual(response.status_code, 302)
+        self.review.refresh_from_db()
+        self.assertTrue(self.review.verified_purchase)
+
+    def test_delivered_order_page_links_to_review(self):
+        self.set_status(Order.Status.DELIVERED)
+        self.client.force_login(self.user)
+        response = self.client.get(self.order.get_absolute_url())
+        self.assertContains(response, "Write a review")
+        self.assertContains(response, f"{self.product.get_absolute_url()}#reviews")
 
 
 class RatingDisplayTests(TestCase):
@@ -163,8 +240,14 @@ class RatingDisplayTests(TestCase):
 
 class SeedReviewsTests(TestCase):
     def test_seed_creates_reviews_once(self):
-        call_command("seed_demo", no_images=True, stdout=StringIO())
+        with self.captureOnCommitCallbacks(execute=True):
+            call_command("seed_demo", no_images=True, stdout=StringIO())
         count = Review.objects.count()
+        verified = Review.objects.filter(verified_purchase=True)
+        self.assertTrue(verified.exists())
+        for review in verified:  # every badge is backed by a delivered order
+            self.assertTrue(OrderItem.objects.filter(
+                order__user=review.user, order__status=Order.Status.DELIVERED, product=review.product).exists())
         self.assertGreaterEqual(count, Product.objects.count() * 2)
         self.assertFalse(User.objects.get(username="demo_ayesha").has_usable_password())
         call_command("seed_demo", no_images=True, stdout=StringIO())

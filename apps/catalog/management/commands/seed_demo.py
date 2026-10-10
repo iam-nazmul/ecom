@@ -6,11 +6,14 @@ from io import BytesIO
 from django.core.files.base import ContentFile
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from django.utils import timezone
 from django.utils.text import slugify
 from PIL import Image, ImageDraw, ImageFont
 
 from apps.catalog.models import Category, Product, ProductImage, ProductSpec
+from apps.orders.models import Order, OrderItem
+from apps.inventory.demo import DEMO_ORDER_NOTE, seed_inventory
 from apps.reviews.models import Review
 
 IMAGES_PER_PRODUCT = 3
@@ -203,11 +206,40 @@ def seed_reviews(product, reviewers):
     for user in rng.sample(reviewers, rng.randint(2, min(6, len(reviewers)))):
         rating = rng.choice(RATING_WEIGHTS)
         title, body = rng.choice(REVIEW_TEXT[rating])
-        review = Review.objects.create(
-            product=product, user=user, rating=rating, title=title, body=body,
-            verified_purchase=rng.random() < 0.7,
-        )
+        review = Review.objects.create(product=product, user=user, rating=rating, title=title, body=body)
         Review.objects.filter(pk=review.pk).update(created_at=now - timedelta(days=rng.randint(1, 120)))
+
+
+def seed_delivered_orders(reviewers):
+    """Give each demo reviewer one delivered order with ~70% of the products they reviewed.
+
+    That is what earns their reviews the "Verified purchase" badge (via the order signal).
+    Skips reviewers who already have orders, so it runs once.
+    """
+    orders = 0
+    for user in reviewers:
+        if user.orders.exists():
+            continue
+        products = [
+            r.product for r in user.reviews.select_related("product").order_by("product_id")
+            if random.Random(f"{user.username}:{r.product.slug}").random() < 0.7
+        ]
+        if not products:
+            continue
+        subtotal = sum((p.price for p in products), Decimal("0.00"))
+        with transaction.atomic():
+            order = Order.objects.create(
+                user=user, full_name=user.get_full_name(), email=f"{user.username}@example.com",
+                address_line1="House 12, Road 5", city="Dhaka", postal_code="1209", country="Bangladesh",
+                status=Order.Status.DELIVERED, subtotal=subtotal, shipping_cost=Decimal("0.00"), total=subtotal,
+                notes=DEMO_ORDER_NOTE,
+            )
+            OrderItem.objects.bulk_create(
+                OrderItem(order=order, product=p, product_name=p.name, unit_price=p.price, quantity=1)
+                for p in products
+            )
+        orders += 1
+    return orders
 
 
 def demo_reviewers():
@@ -286,4 +318,11 @@ class Command(BaseCommand):
                     for index in range(IMAGES_PER_PRODUCT):
                         ProductImage.objects.create(product=product, image=demo_image(product, index), sort_order=index)
                         images += 1
-        self.stdout.write(self.style.SUCCESS(f"Demo data ready ({created} new products, {images} new images, {reviews} new reviews)."))
+        orders = seed_delivered_orders(reviewers)
+        demo_slugs = [slugify(name) for products in CATALOG.values() for name, *_ in products]
+        inventory = seed_inventory(demo_slugs)
+        self.stdout.write(self.style.SUCCESS(
+            f"Demo data ready ({created} new products, {images} new images, "
+            f"{reviews} new reviews, {orders} new delivered orders, {inventory['costs']} product costs, "
+            f"{inventory['purchases']} purchases, {inventory['expenses']} expenses, {inventory['income']} income records)."
+        ))

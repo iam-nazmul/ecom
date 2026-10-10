@@ -37,9 +37,10 @@ class ProductSpecInline(admin.TabularInline):
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ["cover", "name", "category", "price", "stock", "is_active", "is_featured", "updated_at"]
+    list_display = ["cover", "name", "category", "price", "average_cost", "stock", "is_active", "is_featured", "updated_at"]
     list_display_links = ["cover", "name"]
-    list_editable = ["price", "stock", "is_active", "is_featured"]
+    list_editable = ["price", "is_active", "is_featured"]
+    readonly_fields = ["stock", "average_cost"]
     list_filter = ["category", "is_active", "is_featured"]
     list_select_related = ["category"]
     search_fields = ["name", "summary", "description"]
@@ -47,7 +48,11 @@ class ProductAdmin(admin.ModelAdmin):
     inlines = [ProductImageInline, ProductSpecInline]
     fieldsets = [
         (None, {"fields": ["category", "name", "slug", "image", "is_active", "is_featured"]}),
-        ("Pricing & stock", {"fields": ["price", "compare_at_price", "stock"]}),
+        ("Pricing", {"fields": ["price", "compare_at_price"]}),
+        ("Inventory", {
+            "fields": ["stock", "average_cost", "reorder_level"],
+            "description": "Stock changes through Purchases (receiving), sales and Stock adjustments.",
+        }),
         ("Content", {"fields": ["summary", "description"]}),
     ]
 
