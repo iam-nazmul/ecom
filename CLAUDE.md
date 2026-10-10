@@ -21,6 +21,8 @@ apps/accounts/     signup / login / logout / order history
 apps/inventory/    Supplier, Purchase(+Item), StockMovement ledger, StockAdjustment, Expense, Income;
                    services.py = ALL stock/cost rules + profit_and_loss(); demo.py = demo data;
                    payments.py = supplier payments, allocation, balances, statements
+apps/pos/          OPTIONAL point of sale (POS_ENABLED). Self-contained: models, services,
+                   views, jinja2/ templates, static/ JS, migrations, tests — see below
 apps/reviews/      Review model, rating summary + review context (apps/reviews/services.py), submit/delete views
 template/          ALL storefront templates (Jinja2), incl. macros/ and errors
 assets/css/        Tailwind source (input.css) → compiled to static/css/app.css
@@ -94,6 +96,21 @@ The Docker image builds the CSS itself in a Node stage, so `npm` is not needed t
 - Each app has its tests in `apps/<app>/tests.py`. Add tests for any new behaviour.
   `response.context` is `None` for Jinja2-rendered pages in the test client — assert on the
   HTML (`assertContains`) or on the database instead.
+
+## Optional apps (POS)
+
+- `apps/pos` must stay removable. **Never import `apps.pos` or reference `pos:` URLs / `pos_`
+  names from any other app, template or config file** except the `POS_ENABLED` switch in
+  `config/settings.py` and the guarded include in `config/urls.py`. `apps/core/tests.py`
+  fails if you do.
+- Need a hook into shared UI? Add a generic registry in `apps/core` (like `menu.py`) and let
+  the optional app register itself in `AppConfig.ready()`.
+- The POS only *uses* other apps through their public functions (`inventory.services.
+  lock_products/record_sale`, `orders.models.Order`). FKs to other apps' models use
+  `db_constraint=False`. Its templates live in `apps/pos/jinja2/pos/`, JS in
+  `apps/pos/static/pos/`.
+- Check both modes before shipping: `docker compose exec web python manage.py test` and
+  `docker compose exec -e POS_ENABLED=0 web python manage.py test`.
 
 ## Gotchas
 

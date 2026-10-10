@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Receipt {{ sale.number }}</title>
+  <style>
+    /* Self-contained so it prints the same on any 58–80 mm thermal printer. */
+    @page { size: 80mm auto; margin: 4mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f3f4f6; color: #111; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .paper { width: 76mm; max-width: 100%; margin: 16px auto; padding: 12px; background: #fff; box-shadow: 0 1px 4px rgb(0 0 0 / .15); }
+    h1 { margin: 0; font-size: 16px; text-align: center; }
+    .center { text-align: center; }
+    .muted { color: #555; }
+    hr { border: 0; border-top: 1px dashed #999; margin: 8px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    td { vertical-align: top; padding: 1px 0; }
+    td.r { text-align: right; white-space: nowrap; }
+    .total td { font-size: 15px; font-weight: 700; padding-top: 4px; }
+    .void { margin: 8px 0; padding: 4px; border: 2px solid #b91c1c; color: #b91c1c; font-weight: 700; text-align: center; }
+    .actions { text-align: center; margin: 12px; font-family: system-ui, sans-serif; }
+    .actions button, .actions a { font: inherit; padding: 6px 14px; margin: 0 4px; border-radius: 8px; border: 1px solid #d1d5db; background: #fff; color: #111; cursor: pointer; text-decoration: none; }
+    @media print { body { background: #fff; } .paper { margin: 0; box-shadow: none; width: auto; } .actions { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="paper">
+    <h1>{{ store }}</h1>
+    <p class="center muted">{{ address }}</p>
+    <hr>
+    <table>
+      <tr><td>Receipt</td><td class="r">{{ sale.number }}</td></tr>
+      <tr><td>Date</td><td class="r">{{ sale.created_at|localtime('%d/%m/%Y %H:%M') }}</td></tr>
+      <tr><td>Register</td><td class="r">{{ sale.session.register.name }}</td></tr>
+      <tr><td>Cashier</td><td class="r">{{ sale.cashier.get_full_name() or sale.cashier.get_username() if sale.cashier else '—' }}</td></tr>
+      {% if sale.customer_name %}<tr><td>Customer</td><td class="r">{{ sale.customer_name }}</td></tr>{% endif %}
+    </table>
+    {% if sale.is_voided %}<div class="void">VOIDED · {{ sale.void_reason }}</div>{% endif %}
+    <hr>
+    <table>
+      {% for line in sale.lines.all() %}
+        <tr><td colspan="2">{{ line.product_name }}</td></tr>
+        <tr>
+          <td class="muted">&nbsp;&nbsp;{{ line.quantity }} × {{ line.list_price|money }}</td>
+          <td class="r">{{ (line.list_price * line.quantity)|money }}</td>
+        </tr>
+      {% endfor %}
+    </table>
+    <hr>
+    <table>
+      <tr><td>Subtotal</td><td class="r">{{ sale.subtotal|money }}</td></tr>
+      {% if sale.discount_amount %}<tr><td>Discount ({{ sale.discount_percent|float }}%)</td><td class="r">−{{ sale.discount_amount|money }}</td></tr>{% endif %}
+      <tr class="total"><td>TOTAL</td><td class="r">{{ sale.total|money }}</td></tr>
+    </table>
+    <hr>
+    <table>
+      {% for p in sale.payments.all() %}
+        <tr><td>{{ p.get_method_display() }}{% if p.reference %} <span class="muted">{{ p.reference }}</span>{% endif %}</td><td class="r">{{ p.received|money }}</td></tr>
+      {% endfor %}
+      {% if sale.change_given %}<tr><td>Change</td><td class="r">{{ sale.change_given|money }}</td></tr>{% endif %}
+    </table>
+    <hr>
+    <p class="center">{{ footer }}</p>
+    <p class="center muted">Printed {{ printed_at|localtime('%d/%m/%Y %H:%M') }}</p>
+  </div>
+  <div class="actions">
+    <button type="button" onclick="window.print()">Print</button>
+    <a href="{{ url('pos:terminal') }}">Back to POS</a>
+  </div>
+  {% if request.GET.get('print') %}<script>window.addEventListener("load", () => window.print());</script>{% endif %}
+</body>
+</html>

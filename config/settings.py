@@ -48,6 +48,12 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+# Optional apps: switched on/off by env flags. Nothing else imports them, so disabling
+# one removes it completely (no URLs, models, migrations or menu links).
+POS_ENABLED = env_bool("POS_ENABLED", False)
+if POS_ENABLED:
+    INSTALLED_APPS.append("apps.pos")
+
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
 
@@ -144,3 +150,9 @@ CURRENCY_SYMBOL = os.environ.get("CURRENCY_SYMBOL", "৳")
 SHIPPING_FLAT_RATE = Decimal(os.environ.get("SHIPPING_FLAT_RATE", "5.00"))
 FREE_SHIPPING_THRESHOLD = Decimal(os.environ.get("FREE_SHIPPING_THRESHOLD", "5000.00"))
 PRODUCTS_PER_PAGE = 12
+
+# Point of sale (apps/pos) — only used when POS_ENABLED.
+POS_STORE_NAME = os.environ.get("POS_STORE_NAME", "Ecom Store")
+POS_STORE_ADDRESS = os.environ.get("POS_STORE_ADDRESS", "Dhaka, Bangladesh")
+POS_RECEIPT_FOOTER = os.environ.get("POS_RECEIPT_FOOTER", "Thank you for shopping with us!")
+POS_MAX_DISCOUNT_PERCENT = Decimal(os.environ.get("POS_MAX_DISCOUNT_PERCENT", "20"))  # superusers: up to 100

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Close register{% endblock %}
+
+{% block content %}
+<div class="container-page py-6">
+  {% set active = "close" %}{% include "pos/_nav.html" %}
+  <h1 class="mt-6 text-2xl font-bold tracking-tight">Close {{ session.register.name }}</h1>
+  <p class="mt-1 text-sm text-gray-600">Count the cash in the drawer, enter the total, and close the register. This can't be undone.</p>
+
+  <div class="mt-6 grid gap-6 lg:grid-cols-3">
+    <div class="lg:col-span-2">{% include "pos/_summary.html" %}</div>
+    <form method="post" class="card h-fit space-y-4 p-5">
+      {{ csrf_input }}
+      <p class="text-sm text-gray-600">Expected in drawer: <span class="font-semibold text-gray-900">{{ summary.expected_cash|money }}</span></p>
+      <div class="field">
+        <label for="counted_cash" class="mb-1.5 block text-sm font-medium text-gray-700">Counted cash ({{ settings.CURRENCY_SYMBOL }})</label>
+        <input id="counted_cash" name="counted_cash" type="number" min="0" step="0.01" required inputmode="decimal" autofocus>
+      </div>
+      <div class="field">
+        <label for="note" class="mb-1.5 block text-sm font-medium text-gray-700">Note (optional)</label>
+        <textarea id="note" name="note" rows="3" placeholder="Explain any difference"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary w-full">Close register &amp; print Z-report</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

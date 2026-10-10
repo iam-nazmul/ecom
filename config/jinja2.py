@@ -49,6 +49,12 @@ def localtime(value, fmt="%b %d, %Y %H:%M"):
     return timezone.localtime(value).strftime(fmt)
 
 
+def staff_links(user):
+    from apps.core.menu import staff_links as links
+
+    return links(user)
+
+
 def environment(**options):
     env = Environment(**options)
     env.globals.update(
@@ -60,6 +66,7 @@ def environment(**options):
             "query_with": query_with,
             "settings": settings,
             "now": timezone.now,
+            "staff_links": staff_links,
         }
     )
     env.filters.update({"money": money, "localtime": localtime, "percent": percent})

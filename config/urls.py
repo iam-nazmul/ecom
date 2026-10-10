@@ -17,5 +17,8 @@ urlpatterns = [
     path("", include("apps.core.urls")),
 ]
 
+if settings.POS_ENABLED:
+    urlpatterns.insert(-1, path("pos/", include("apps.pos.urls")))
+
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}POS sales{% endblock %}
+
+{% block content %}
+<div class="container-page py-6">
+  {% set active = "sales" %}{% include "pos/_nav.html" %}
+
+  {% if not viewing %}
+    <div class="card mt-6 p-10 text-center text-gray-600">
+      No open register. <a href="{{ url('pos:terminal') }}" class="btn-link">Open one to start selling</a>.
+    </div>
+  {% else %}
+    <div class="mt-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight">Sales · {{ viewing.register.name }}</h1>
+        <p class="text-sm text-gray-500">Session opened {{ viewing.opened_at|localtime }}{{ ' · closed' if not viewing.is_open }}</p>
+      </div>
+      <a href="{{ url('pos:session', viewing.pk) }}" class="btn btn-secondary">Z-report</a>
+    </div>
+
+    <section class="card mt-4 overflow-hidden">
+      {% if sales %}
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[48rem] text-sm">
+            <thead class="bg-gray-50 text-left text-xs tracking-wide text-gray-500 uppercase">
+              <tr>
+                <th class="px-5 py-2 font-medium">Sale</th>
+                <th class="px-3 py-2 font-medium">Time</th>
+                <th class="px-3 py-2 font-medium">Items</th>
+                <th class="px-3 py-2 font-medium">Paid by</th>
+                <th class="px-3 py-2 text-right font-medium">Total</th>
+                <th class="px-5 py-2"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              {% for sale in sales %}
+                <tr class="{{ 'bg-gray-50 text-gray-400' if sale.is_voided }} align-top">
+                  <td class="px-5 py-3">
+                    <span class="font-medium {{ 'line-through' if sale.is_voided }}">{{ sale.number }}</span>
+                    {% if sale.is_voided %}<span class="badge ml-1 bg-red-50 text-red-700">Voided</span>
+                      <span class="block text-xs">{{ sale.void_reason }}</span>{% endif %}
+                    {% if sale.customer_name %}<span class="block text-xs text-gray-500">{{ sale.customer_name }} {{ sale.customer_phone }}</span>{% endif %}
+                  </td>
+                  <td class="px-3 py-3 whitespace-nowrap">{{ sale.created_at|localtime('%H:%M') }}<span class="block text-xs text-gray-500">{{ sale.cashier or '' }}</span></td>
+                  <td class="px-3 py-3">
+                    {% for line in sale.lines.all() %}<span class="block">{{ line.quantity }} × {{ line.product_name }}</span>{% endfor %}
+                  </td>
+                  <td class="px-3 py-3">
+                    {% for p in sale.payments.all() %}<span class="block">{{ p.get_method_display() }} {{ p.amount|money }}</span>{% endfor %}
+                    {% if sale.change_given %}<span class="block text-xs text-gray-500">change {{ sale.change_given|money }}</span>{% endif %}
+                  </td>
+                  <td class="px-3 py-3 text-right font-semibold tabular-nums">
+                    {{ sale.total|money }}
+                    {% if sale.discount_amount %}<span class="block text-xs font-normal text-gray-500">−{{ sale.discount_amount|money }} ({{ sale.discount_percent|float }}%)</span>{% endif %}
+                  </td>
+                  <td class="px-5 py-3 text-right whitespace-nowrap">
+                    <a href="{{ url('pos:receipt', sale.pk) }}?print=1" target="_blank" class="btn btn-secondary px-3 py-1.5">Receipt</a>
+                    {% if can_void and not sale.is_voided and viewing.is_open %}
+                      <details class="mt-2 text-left">
+                        <summary class="cursor-pointer text-xs font-medium text-red-600">Void…</summary>
+                        <form method="post" action="{{ url('pos:void', sale.pk) }}" class="mt-2 flex gap-1">
+                          {{ csrf_input }}
+                          <input name="reason" required maxlength="255" placeholder="Reason" class="input py-1 text-xs" aria-label="Reason for voiding {{ sale.number }}">
+                          <button type="submit" class="btn bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700">Void</button>
+                        </form>
+                      </details>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="p-8 text-center text-sm text-gray-500">No sales in this session yet.</p>
+      {% endif %}
+    </section>
+    {% if not can_void %}<p class="mt-3 text-xs text-gray-500">Voiding sales needs the “Can void POS sales” permission.</p>{% endif %}
+  {% endif %}
+</div>
+{% endblock %}

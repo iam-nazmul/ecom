@@ -58,6 +58,10 @@
                 {% if user.is_superuser %}
                   <a href="{{ url('inventory:profit_loss') }}" class="block px-4 py-2 text-gray-700 hover:bg-gray-50">Profit &amp; loss</a>
                 {% endif %}
+                {# Links registered by optional apps (see apps/core/menu.py). #}
+                {% for label, href in staff_links(user) %}
+                  <a href="{{ href }}" class="block px-4 py-2 text-gray-700 hover:bg-gray-50">{{ label }}</a>
+                {% endfor %}
                 {% if can_admin %}
                   <a href="{{ url('admin:index') }}" class="block px-4 py-2 text-gray-700 hover:bg-gray-50">Admin</a>
                 {% endif %}

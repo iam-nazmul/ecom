@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Point of sale{% endblock %}
+
+{% block content %}
+<div class="mx-auto w-full max-w-[96rem] px-4 py-6 sm:px-6">
+  {% set active = "terminal" %}{% include "pos/_nav.html" %}
+
+  <div id="pos" class="mt-4 grid gap-6 lg:grid-cols-[1fr_26rem]"
+       data-products-url="{{ url('pos:api_products') }}"
+       data-checkout-url="{{ url('pos:api_checkout') }}"
+       data-csrf="{{ csrf_token }}"
+       data-currency="{{ currency }}"
+       data-max-discount="{{ max_discount }}"
+       data-storage-key="pos-cart-{{ session.pk }}">
+
+    {# ---------------- Products ---------------- #}
+    <section aria-label="Products" class="min-w-0">
+      <form data-search class="flex gap-2" role="search">
+        <label for="pos-search" class="sr-only">Search or scan</label>
+        <input id="pos-search" type="search" autocomplete="off" autofocus
+               placeholder="Search by name, or scan a barcode and press Enter" class="input py-3 text-base">
+        <button type="submit" class="btn btn-secondary">Find</button>
+      </form>
+      <div class="mt-3 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Categories">
+        <button type="button" data-category="" aria-pressed="true"
+                class="shrink-0 rounded-full px-3 py-1.5 text-sm font-medium ring-1 ring-gray-300 aria-pressed:bg-brand-600 aria-pressed:text-white aria-pressed:ring-brand-600">All</button>
+        {% for c in categories %}
+          <button type="button" data-category="{{ c.slug }}" aria-pressed="false"
+                  class="shrink-0 rounded-full px-3 py-1.5 text-sm font-medium ring-1 ring-gray-300 aria-pressed:bg-brand-600 aria-pressed:text-white aria-pressed:ring-brand-600">{{ c.name }}</button>
+        {% endfor %}
+      </div>
+      <p data-status class="mt-3 text-sm text-gray-500" aria-live="polite">Loading products…</p>
+      <ul data-products class="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4"></ul>
+    </section>
+
+    {# ---------------- Cart & payment ---------------- #}
+    <section aria-label="Current sale" class="card flex flex-col lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)]">
+      <div class="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+        <h2 class="font-semibold">Current sale</h2>
+        <button type="button" data-clear class="text-sm font-medium text-red-600 hover:text-red-700">Clear</button>
+      </div>
+
+      <ul data-cart class="min-h-24 flex-1 divide-y divide-gray-100 overflow-y-auto"></ul>
+      <p data-empty class="px-4 py-8 text-center text-sm text-gray-500">Tap a product or scan a barcode to add it.</p>
+
+      <div class="space-y-3 border-t border-gray-100 px-4 py-3 text-sm">
+        <details class="group">
+          <summary class="cursor-pointer text-sm font-medium text-brand-600">Customer &amp; discount</summary>
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            <label class="col-span-2 text-xs text-gray-600">Customer name<input data-customer-name class="input mt-1" maxlength="150" placeholder="Walk-in customer"></label>
+            <label class="text-xs text-gray-600">Phone<input data-customer-phone class="input mt-1" maxlength="30" inputmode="tel"></label>
+            <label class="text-xs text-gray-600">Discount % <span class="text-gray-400">(max {{ max_discount|int }})</span>
+              <input data-discount type="number" min="0" max="{{ max_discount }}" step="0.5" value="0" class="input mt-1" inputmode="decimal"></label>
+          </div>
+        </details>
+
+        <dl class="space-y-1">
+          <div class="flex justify-between text-gray-600"><dt>Subtotal</dt><dd data-subtotal class="tabular-nums">—</dd></div>
+          <div class="flex justify-between text-gray-600"><dt>Discount</dt><dd data-discount-amount class="tabular-nums">—</dd></div>
+          <div class="flex justify-between text-xl font-bold"><dt>Total</dt><dd data-total class="tabular-nums">—</dd></div>
+        </dl>
+
+        <div>
+          <p class="mb-1.5 text-xs font-medium text-gray-600">Payment</p>
+          <div class="grid grid-cols-5 gap-1" role="group" aria-label="Payment method">
+            {% for value, label in methods %}
+              <button type="button" data-method="{{ value }}" aria-pressed="{{ 'true' if loop.first else 'false' }}"
+                      class="rounded-lg px-1 py-2 text-xs font-semibold ring-1 ring-gray-300 aria-pressed:bg-brand-600 aria-pressed:text-white aria-pressed:ring-brand-600">{{ label }}</button>
+            {% endfor %}
+          </div>
+          <div class="mt-2 flex gap-2">
+            <label class="flex-1 text-xs text-gray-600"><span data-amount-label>Cash received</span>
+              <input data-amount type="number" min="0" step="0.01" class="input mt-1 text-base" inputmode="decimal"></label>
+            <label data-reference-wrap class="hidden flex-1 text-xs text-gray-600">Transaction ID
+              <input data-reference class="input mt-1" maxlength="100"></label>
+          </div>
+          <div data-quick class="mt-2 flex flex-wrap gap-1"></div>
+          <button type="button" data-add-payment class="btn-link mt-2 text-xs">+ Split payment</button>
+          <ul data-payments class="mt-2 space-y-1"></ul>
+          <p data-change class="mt-2 hidden rounded-lg bg-green-50 px-3 py-2 text-sm font-semibold text-green-800"></p>
+        </div>
+
+        <p data-error role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700"></p>
+        <button type="button" data-charge class="btn btn-primary w-full py-4 text-base" disabled>Charge</button>
+      </div>
+    </section>
+  </div>
+
+  {# Sale complete dialog #}
+  <dialog data-done class="m-auto w-full max-w-sm rounded-2xl p-0 shadow-xl backdrop:bg-gray-900/50">
+    <div class="p-6 text-center">
+      <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-2xl text-green-700">✓</div>
+      <h2 class="mt-3 text-xl font-bold">Sale <span data-done-number></span> complete</h2>
+      <p class="mt-1 text-gray-600">Total <span data-done-total class="font-semibold"></span></p>
+      <p data-done-change class="mt-3 rounded-lg bg-green-50 py-3 text-2xl font-bold text-green-800"></p>
+      <div class="mt-5 grid grid-cols-2 gap-2">
+        <a data-done-receipt href="#" target="_blank" class="btn btn-secondary">Print receipt</a>
+        <button type="button" data-new-sale class="btn btn-primary">New sale</button>
+      </div>
+    </div>
+  </dialog>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ static('pos/terminal.js') }}" defer></script>
+{% endblock %}

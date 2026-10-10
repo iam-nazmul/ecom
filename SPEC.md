@@ -159,6 +159,55 @@ Gunicorn behind Nginx via Docker Compose.
   other income by category, monthly breakdown (incl. other income) with bars, top 10 products by profit, open (undelivered) order value,
   and a warning count of sold items with unknown cost.
 
+## 4a. Point of sale — optional app (`apps/pos`)
+
+**Isolation contract.** Switched by `POS_ENABLED` (env; default off in settings, on in
+`.env`/compose). When off, `apps.pos` is not installed: no URLs, admin, models, migrations
+or menu links, and the rest of the site behaves exactly as without it. Nothing outside
+`apps/pos` imports it (enforced by `apps/core/tests.py`); the only hooks are the flag in
+`config/settings.py`, the guarded include in `config/urls.py`, and a generic staff-menu
+registry (`apps/core/menu.py`) the app registers into from `AppConfig.ready()`. Templates
+(`apps/pos/jinja2/pos/`), JS (`apps/pos/static/pos/`), migrations and tests live in the app.
+Every FK to another app's model has `db_constraint=False`, so leftover POS tables never
+block deleting products, orders or users. POS tests skip themselves when the app is off.
+
+**Models.** Register (name, location, active; a "Front counter" is created by migration);
+RegisterSession (register, opened by/at, opening cash, closed by/at, expected & counted cash,
+note; one open session per register, one per user); Sale (`S-000001`; session, linked
+`orders.Order`, cashier, optional customer name/phone, subtotal at list price, discount %
+and amount, total, change, status completed/voided + who/when/why); SaleLine (product
+snapshot, list price, discounted unit price, qty); Payment (cash, card, bKash, Nagad, Rocket;
+amount applied, amount received, reference); CashMovement (in/out with reason); Barcode
+(product, unique code).
+
+**Selling.** Staff only. Prices come from the database, never the browser. Sale-level
+discount % (staff ≤ `POS_MAX_DISCOUNT_PERCENT`, default 20; superusers ≤ 100), unit price =
+list × (1 − d) rounded to 0.01. Split tenders; card/mobile may not exceed the total; cash may
+(change given). One transaction locks the session and products, checks stock/active status,
+then creates a **Delivered** `Order` ("Walk-in customer", no shipping) + items and calls
+`inventory.record_sale()` — so stock ledger, COGS and P&L include POS sales automatically.
+Any failure writes nothing.
+
+**Voiding** (superusers or the "Can void POS sales" permission; only while the session is
+open; reason required) cancels the linked order — the inventory app restocks it and the P&L
+drops it. Voided sales are excluded from session totals.
+
+**Cash & close.** Expected cash = opening float + cash sales + cash in − cash out. Closing
+records the counted cash and stores expected/over/short; a Z-report shows completed sales,
+gross, discounts, net, voids, totals by payment method and the cash reconciliation.
+
+**Pages** (`/pos/`): open register → terminal (search/scan by name, barcode, slug or ID;
+category filter; product grid with stock; cart with qty controls; customer & discount; payment
+methods with quick cash amounts and split payments; change due; completion dialog with
+receipt) · Sales (session list, receipts, void) · Cash drawer · Close register · Z-report
+(`/pos/sessions/<id>/`, own sessions or superuser) · 80 mm printable receipt
+(`/pos/sales/<id>/receipt/`, `?print=1` auto-prints) · JSON API `api/products/`,
+`api/checkout/` (staff, CSRF-protected). Admin: registers, barcodes (editable); sessions,
+sales, cash movements (read-only).
+
+**Settings.** `POS_ENABLED`, `POS_STORE_NAME`, `POS_STORE_ADDRESS`, `POS_RECEIPT_FOOTER`,
+`POS_MAX_DISCOUNT_PERCENT`.
+
 ## 5. Pricing rules
 
 - Subtotal = Σ unit price × quantity (Decimal, never float).

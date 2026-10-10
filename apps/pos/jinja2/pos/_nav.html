@@ -1,0 +1,21 @@
+{# POS sub-navigation. Expects: active, session (open session or None). #}
+{% set tabs = [
+  ("terminal", "Sell", url("pos:terminal")),
+  ("sales", "Sales", url("pos:sales")),
+  ("cash", "Cash drawer", url("pos:cash")),
+  ("close", "Close register", url("pos:close")),
+] %}
+<div class="flex flex-col gap-3 border-b border-gray-200 pb-3 md:flex-row md:items-center md:justify-between">
+  <nav class="flex flex-wrap gap-1" aria-label="Point of sale">
+    {% for key, label, href in tabs %}
+      <a href="{{ href }}" {{ 'aria-current="page"'|safe if key == active }}
+         class="rounded-lg px-3 py-2 text-sm font-semibold {{ 'bg-brand-600 text-white' if key == active else 'text-gray-600 hover:bg-gray-100 hover:text-gray-900' }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+  {% if session %}
+    <p class="text-sm text-gray-500">
+      <span class="inline-flex items-center gap-1.5 font-medium text-gray-800"><span class="h-2 w-2 rounded-full bg-green-500"></span>{{ session.register.name }}</span>
+      · opened {{ session.opened_at|localtime('%b %d, %H:%M') }}
+    </p>
+  {% endif %}
+</div>

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Z-report · {{ session.register.name }}{% endblock %}
+
+{% block content %}
+<div class="container-page py-6">
+  {% set active = "" %}{% set current = session if session.is_open else none %}
+  {% with session = current %}{% include "pos/_nav.html" %}{% endwith %}
+  <div class="mt-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">Z-report · {{ session.register.name }}</h1>
+      <p class="mt-1 text-sm text-gray-600">
+        Opened {{ session.opened_at|localtime }} by {{ session.opened_by or '—' }}
+        {% if session.closed_at %}· closed {{ session.closed_at|localtime }} by {{ session.closed_by or '—' }}{% else %}· <span class="font-medium text-green-700">still open</span>{% endif %}
+      </p>
+    </div>
+    <div class="flex gap-2 print:hidden">
+      <a href="{{ url('pos:sales') }}?session={{ session.pk }}" class="btn btn-secondary">Sales</a>
+      <button type="button" onclick="window.print()" class="btn btn-secondary">Print</button>
+    </div>
+  </div>
+  <div class="mt-6">{% include "pos/_summary.html" %}</div>
+  {% if session.note %}<p class="card mt-6 p-5 text-sm whitespace-pre-line text-gray-700"><span class="font-semibold">Note:</span> {{ session.note }}</p>{% endif %}
+</div>
+{% endblock %}

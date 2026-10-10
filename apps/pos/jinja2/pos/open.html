@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Open register{% endblock %}
+
+{% block content %}
+<div class="container-page flex justify-center py-16">
+  <div class="card w-full max-w-md p-8">
+    <h1 class="text-2xl font-bold tracking-tight">Open a register</h1>
+    <p class="mt-1 text-sm text-gray-600">Count the cash in the drawer and enter it as the opening float.</p>
+    {% if registers %}
+      <form method="post" action="{{ url('pos:open') }}" class="mt-6 space-y-4">
+        {{ csrf_input }}
+        <fieldset class="space-y-2">
+          <legend class="mb-1.5 text-sm font-medium text-gray-700">Register</legend>
+          {% for register in registers %}
+            {% set busy_here = register.pk in busy %}
+            <label class="flex items-center gap-3 rounded-lg p-3 ring-1 {{ 'cursor-not-allowed bg-gray-50 text-gray-400 ring-gray-200' if busy_here else 'cursor-pointer ring-gray-300 has-[:checked]:bg-brand-50 has-[:checked]:ring-2 has-[:checked]:ring-brand-600' }}">
+              <input type="radio" name="register" value="{{ register.pk }}" {{ 'disabled' if busy_here }} {{ 'checked' if loop.first and not busy_here }} required>
+              <span class="flex-1">
+                <span class="block font-medium">{{ register.name }}</span>
+                {% if register.location %}<span class="block text-xs text-gray-500">{{ register.location }}</span>{% endif %}
+              </span>
+              {% if busy_here %}<span class="badge bg-gray-200 text-gray-600">In use</span>{% endif %}
+            </label>
+          {% endfor %}
+        </fieldset>
+        <div class="field">
+          <label for="opening_cash" class="mb-1.5 block text-sm font-medium text-gray-700">Opening cash ({{ settings.CURRENCY_SYMBOL }})</label>
+          <input id="opening_cash" name="opening_cash" type="number" min="0" step="0.01" value="0" inputmode="decimal">
+        </div>
+        <button type="submit" class="btn btn-primary w-full py-3">Open register</button>
+      </form>
+    {% else %}
+      <p class="mt-6 rounded-lg bg-amber-50 p-4 text-sm text-amber-800 ring-1 ring-amber-200">
+        No active registers. {% if request.user.is_superuser %}<a href="{{ url('admin:pos_register_add') }}" class="btn-link">Add one in the admin</a>.{% else %}Ask an administrator to add one.{% endif %}
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

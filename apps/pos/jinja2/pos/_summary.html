@@ -1,0 +1,37 @@
+{# Z-report body. Expects: summary, session. #}
+<div class="grid gap-6 md:grid-cols-2">
+  <section class="card p-5" aria-label="Sales">
+    <h2 class="font-semibold">Sales</h2>
+    <dl class="mt-3 space-y-2 text-sm">
+      <div class="flex justify-between"><dt class="text-gray-600">Completed sales</dt><dd class="tabular-nums">{{ summary.sales_count }}</dd></div>
+      <div class="flex justify-between"><dt class="text-gray-600">Gross (list prices)</dt><dd class="tabular-nums">{{ summary.gross|money }}</dd></div>
+      <div class="flex justify-between"><dt class="text-gray-600">Discounts</dt><dd class="tabular-nums">−{{ summary.discounts|money }}</dd></div>
+      <div class="flex justify-between border-t border-gray-100 pt-2 font-semibold"><dt>Net sales</dt><dd class="tabular-nums">{{ summary.net|money }}</dd></div>
+      <div class="flex justify-between text-gray-500"><dt>Voided</dt><dd class="tabular-nums">{{ summary.voided_count }} · {{ summary.voided_total|money }}</dd></div>
+    </dl>
+    <h3 class="mt-5 text-sm font-semibold">By payment method</h3>
+    <dl class="mt-2 space-y-1 text-sm">
+      {% for label, amount in summary.by_method %}
+        <div class="flex justify-between {{ 'text-gray-400' if not amount }}"><dt>{{ label }}</dt><dd class="tabular-nums">{{ amount|money }}</dd></div>
+      {% endfor %}
+    </dl>
+  </section>
+
+  <section class="card p-5" aria-label="Cash drawer">
+    <h2 class="font-semibold">Cash drawer</h2>
+    <dl class="mt-3 space-y-2 text-sm">
+      <div class="flex justify-between"><dt class="text-gray-600">Opening float</dt><dd class="tabular-nums">{{ summary.opening_cash|money }}</dd></div>
+      <div class="flex justify-between"><dt class="text-gray-600">+ Cash sales</dt><dd class="tabular-nums">{{ summary.cash_sales|money }}</dd></div>
+      <div class="flex justify-between"><dt class="text-gray-600">+ Cash in</dt><dd class="tabular-nums">{{ summary.cash_in|money }}</dd></div>
+      <div class="flex justify-between"><dt class="text-gray-600">− Cash out</dt><dd class="tabular-nums">{{ summary.cash_out|money }}</dd></div>
+      <div class="flex justify-between border-t border-gray-100 pt-2 font-semibold"><dt>Expected in drawer</dt><dd class="tabular-nums">{{ (session.expected_cash if session.expected_cash is not none else summary.expected_cash)|money }}</dd></div>
+      {% if session.counted_cash is not none %}
+        <div class="flex justify-between"><dt class="text-gray-600">Counted</dt><dd class="tabular-nums">{{ session.counted_cash|money }}</dd></div>
+        <div class="flex justify-between font-semibold {{ 'text-green-700' if session.difference == 0 else 'text-red-600' }}">
+          <dt>{{ 'Balanced' if session.difference == 0 else ('Over' if session.difference > 0 else 'Short') }}</dt>
+          <dd class="tabular-nums">{{ session.difference|money }}</dd>
+        </div>
+      {% endif %}
+    </dl>
+  </section>
+</div>
