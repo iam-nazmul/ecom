@@ -6,6 +6,7 @@
       <div class="flex justify-between"><dt class="text-gray-600">Completed sales</dt><dd class="tabular-nums">{{ summary.sales_count }}</dd></div>
       <div class="flex justify-between"><dt class="text-gray-600">Gross (list prices)</dt><dd class="tabular-nums">{{ summary.gross|money }}</dd></div>
       <div class="flex justify-between"><dt class="text-gray-600">Discounts</dt><dd class="tabular-nums">−{{ summary.discounts|money }}</dd></div>
+      <div class="flex justify-between"><dt class="text-gray-600">Adjustments</dt><dd class="tabular-nums">−{{ summary.adjustments|money }}</dd></div>
       <div class="flex justify-between border-t border-gray-100 pt-2 font-semibold"><dt>Net sales</dt><dd class="tabular-nums">{{ summary.net|money }}</dd></div>
       <div class="flex justify-between text-gray-500"><dt>Voided</dt><dd class="tabular-nums">{{ summary.voided_count }} · {{ summary.voided_total|money }}</dd></div>
     </dl>

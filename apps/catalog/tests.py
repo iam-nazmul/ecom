@@ -2,6 +2,7 @@ import shutil
 import tempfile
 from decimal import Decimal
 from io import BytesIO, StringIO
+from pathlib import Path
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -10,6 +11,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
+from .management.commands.seed_demo import DEMO_PHOTOS, demo_image
 from .models import Category, Product, ProductImage, ProductSpec
 
 
@@ -175,12 +177,29 @@ class GalleryTests(TestCase):
         self.assertEqual(response.status_code, 302, getattr(response, "context", None))
         self.assertEqual(self.product.images.count(), 2)
 
-    def test_seed_demo_generates_images_once(self):
+    def test_seed_demo_adds_images_once(self):
         call_command("seed_demo", stdout=StringIO())
         count = ProductImage.objects.count()
-        self.assertEqual(count, (Product.objects.count() - 1) * 3)  # setUp's product isn't in the demo catalog
+        for product in Product.objects.exclude(pk=self.product.pk):  # setUp's product isn't in the demo catalog
+            names = [Path(i.image.name).name for i in product.images.all()]
+            if (DEMO_PHOTOS / f"{product.slug}.jpg").is_file():
+                self.assertEqual(len(names), 1, product.slug)  # the real photo
+                self.assertRegex(names[0], rf"^{product.slug}(_\w{{7}})?\.jpg$")
+            else:
+                self.assertEqual(len(names), 3, product.slug)  # generated placeholders
         call_command("seed_demo", stdout=StringIO())
         self.assertEqual(ProductImage.objects.count(), count)
+
+    def test_seed_demo_swaps_placeholders_for_photo_but_keeps_uploads(self):
+        call_command("seed_demo", no_images=True, stdout=StringIO())
+        headphones = Product.objects.get(slug="wireless-headphones")
+        jacket = Product.objects.get(slug="classic-denim-jacket")
+        for index in range(3):
+            ProductImage.objects.create(product=headphones, image=demo_image(headphones, index), sort_order=index)
+        ProductImage.objects.create(product=jacket, image=upload("mine.png"))
+        call_command("seed_demo", stdout=StringIO())
+        self.assertEqual([i.alt_text for i in headphones.images.all()], ["Wireless Headphones"])
+        self.assertEqual([Path(i.image.name).name[:4] for i in jacket.images.all()], ["mine"])
 
 
 class DetailsSectionTests(TestCase):

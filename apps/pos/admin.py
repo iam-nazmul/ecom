@@ -54,7 +54,7 @@ class PaymentInline(ReadOnlyMixin, admin.TabularInline):
 
 @admin.register(Sale)
 class SaleAdmin(ReadOnlyMixin, admin.ModelAdmin):
-    list_display = ["number", "created_at", "session", "cashier", "total", "discount_amount", "status", "receipt_link"]
+    list_display = ["number", "created_at", "session", "cashier", "total", "discount_amount", "adjustment", "status", "receipt_link"]
     list_filter = ["status", "session__register", "created_at"]
     list_select_related = ["session__register", "cashier"]
     search_fields = ["id", "customer_name", "customer_phone", "lines__product_name"]

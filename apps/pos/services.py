@@ -75,7 +75,8 @@ def session_summary(session):
     sales = session.sales.all()
     completed = sales.filter(status=Sale.Status.COMPLETED)
     totals = completed.aggregate(
-        count=Count("id"), gross=Sum("subtotal"), discounts=Sum("discount_amount"), net=Sum("total"),
+        count=Count("id"), gross=Sum("subtotal"), discounts=Sum("discount_amount"), adjustments=Sum("adjustment"),
+        net=Sum("total"),
     )
     voided = sales.filter(status=Sale.Status.VOIDED).aggregate(count=Count("id"), total=Sum("total"))
     by_method = {
@@ -92,6 +93,7 @@ def session_summary(session):
         "sales_count": totals["count"],
         "gross": money(totals["gross"] or ZERO),
         "discounts": money(totals["discounts"] or ZERO),
+        "adjustments": money(totals["adjustments"] or ZERO),
         "net": money(totals["net"] or ZERO),
         "voided_count": voided["count"],
         "voided_total": money(voided["total"] or ZERO),
@@ -128,19 +130,61 @@ def max_discount_for(user):
     return Decimal("100") if user.is_superuser else settings.POS_MAX_DISCOUNT_PERCENT
 
 
-def checkout(session, user, lines, payments, *, discount_percent=ZERO, customer_name="", customer_phone=""):
+def max_adjustment_for(user):
+    """None = no limit."""
+    return None if user.is_superuser else settings.POS_MAX_ADJUSTMENT
+
+
+def _spread(amounts, reduction):
+    """Take `reduction` off `amounts` in proportion to their size, to the cent (all in cents)."""
+    whole = sum(amounts)
+    if not reduction or not whole:
+        return list(amounts)
+    shares = [reduction * a // whole for a in amounts]
+    leftover = reduction - sum(shares)
+    by_remainder = sorted(range(len(amounts)), key=lambda i: (reduction * amounts[i]) % whole, reverse=True)
+    for i in by_remainder[:leftover]:
+        shares[i] += 1
+    return [a - s for a, s in zip(amounts, shares)]
+
+
+def _unit_prices(line_total, qty):
+    """Split a line total (cents) into [(qty, unit price)] rows that add up to it exactly."""
+    unit, extra = divmod(line_total, qty)
+    rows = [(qty - extra, unit), (extra, unit + 1)]
+    return [(q, money(Decimal(u) / 100)) for q, u in rows if q]
+
+
+def checkout(session, user, lines, payments, *, discount_percent=ZERO, discount_amount=None, adjustment=ZERO,
+             customer_name="", customer_phone=""):
     """Sell `lines` [(product_id, qty)] paid by `payments` [(method, amount, reference)].
 
+    The discount is given either as a percentage or as an amount (`discount_amount`, which
+    wins when given). `adjustment` is written off the amount due (e.g. rounding off the last
+    few taka); it is never handed back as change.
+
     Prices always come from the database. Cash may exceed what's due (change is given);
-    card/mobile payments may not. Everything is written in one transaction or not at all.
+    card/mobile payments may not. Discount and adjustment are spread over the lines so the
+    order items add up to the amount charged, which is what the P&L counts as revenue.
+    Everything is written in one transaction or not at all.
     """
     if not session.is_open:
         raise PosError("This register session is closed.")
     discount_percent = money(discount_percent)
     if not ZERO <= discount_percent <= 100:
         raise PosError("Discount must be between 0 and 100%.")
-    if discount_percent > max_discount_for(user):
+    if discount_amount is not None:
+        discount_amount = money(discount_amount)
+        if discount_amount < 0:
+            raise PosError("Discount can't be negative.")
+    elif discount_percent > max_discount_for(user):
         raise PosError(f"Your maximum discount is {max_discount_for(user)}%.")
+    adjustment = money(adjustment)
+    if adjustment < 0:
+        raise PosError("Adjustment can't be negative.")
+    limit = max_adjustment_for(user)
+    if limit is not None and adjustment > limit:
+        raise PosError(f"Your maximum adjustment is {settings.CURRENCY_SYMBOL}{limit}.")
 
     quantities = Counter()
     for product_id, qty in lines:
@@ -174,10 +218,19 @@ def checkout(session, user, lines, payments, *, discount_percent=ZERO, customer_
             if product.stock < qty:
                 raise PosError(f"Only {product.stock} of {product.name} in stock.")
 
-        factor = (Decimal("100") - discount_percent) / 100
-        priced = [(products[pid], qty, money(products[pid].price * factor)) for pid, qty in quantities.items()]
-        subtotal = sum((p.price * qty for p, qty, _ in priced), ZERO)
-        total = sum((unit * qty for _, qty, unit in priced), ZERO)
+        sold = [(products[pid], qty) for pid, qty in quantities.items()]
+        subtotal = sum((p.price * qty for p, qty in sold), ZERO)
+        if discount_amount is None:
+            discount_amount = money(subtotal * discount_percent / 100)
+        else:
+            if discount_amount > subtotal:
+                raise PosError("Discount can't be more than the subtotal.")
+            if discount_amount > money(subtotal * max_discount_for(user) / 100):
+                raise PosError(f"Your maximum discount is {max_discount_for(user)}%.")
+            discount_percent = money(discount_amount * 100 / subtotal) if subtotal else ZERO
+        if adjustment > subtotal - discount_amount:
+            raise PosError("Adjustment can't be more than the amount due.")
+        total = subtotal - discount_amount - adjustment
 
         non_cash = sum((a for m, a, _ in tenders if m != CASH), ZERO)
         cash_received = sum((a for m, a, _ in tenders if m == CASH), ZERO)
@@ -186,6 +239,11 @@ def checkout(session, user, lines, payments, *, discount_percent=ZERO, customer_
         cash_due = total - non_cash
         if cash_received < cash_due:
             raise PosError(f"Payment is short by {settings.CURRENCY_SYMBOL}{cash_due - cash_received}.")
+        if adjustment and cash_received > cash_due:
+            raise PosError("A sale with an adjustment can't give change. Lower the adjustment or the cash received.")
+
+        net = _spread([int(p.price * qty * 100) for p, qty in sold], int((discount_amount + adjustment) * 100))
+        priced = [(p, qty, line_total) for (p, qty), line_total in zip(sold, net)]
 
         order = Order.objects.create(
             full_name=customer_name.strip() or "Walk-in customer", email="", phone=customer_phone.strip(),
@@ -193,20 +251,23 @@ def checkout(session, user, lines, payments, *, discount_percent=ZERO, customer_
             country="-", notes=f"POS sale · {session.register.name}", status=Order.Status.DELIVERED,
             subtotal=total, shipping_cost=ZERO, total=total,
         )
+        # A line whose total doesn't divide evenly by its quantity becomes two items one cent apart.
         items = OrderItem.objects.bulk_create(
-            OrderItem(order=order, product=p, product_name=p.name, unit_price=unit, quantity=qty)
-            for p, qty, unit in priced
+            OrderItem(order=order, product=p, product_name=p.name, unit_price=unit, quantity=q)
+            for p, qty, line_total in priced for q, unit in _unit_prices(line_total, qty)
         )
         record_sale(order, items, products)  # cost snapshot + stock ledger
 
         sale = Sale.objects.create(
             session=session, order=order, cashier=user, customer_name=customer_name.strip(),
             customer_phone=customer_phone.strip(), subtotal=subtotal, discount_percent=discount_percent,
-            discount_amount=subtotal - total, total=total, change_given=cash_received - cash_due,
+            discount_amount=discount_amount, adjustment=adjustment, total=total,
+            change_given=cash_received - cash_due,
         )
         SaleLine.objects.bulk_create(
-            SaleLine(sale=sale, product=p, product_name=p.name, list_price=p.price, unit_price=unit, quantity=qty)
-            for p, qty, unit in priced
+            SaleLine(sale=sale, product=p, product_name=p.name, list_price=p.price,
+                     unit_price=money(Decimal(line_total) / 100 / qty), quantity=qty)
+            for p, qty, line_total in priced
         )
         rows = [Payment(sale=sale, method=m, amount=a, received=a, reference=ref) for m, a, ref in tenders if m != CASH]
         if cash_received:

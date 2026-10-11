@@ -15,6 +15,7 @@ config/            settings, urls, wsgi, jinja2 environment (config/jinja2.py)
 apps/core/         home page, healthcheck
 apps/catalog/      Category, Product, ProductImage (gallery), ProductSpec (specifications),
                    listing/detail views, seed_demo command
+apps/catalog/demo_images/  real product photos for seed_demo (<slug>.jpg) + CREDITS.md (licences)
 apps/cart/         session cart (apps/cart/cart.py) + views
 apps/orders/       Order, OrderItem, checkout service (apps/orders/services.py)
 apps/accounts/     signup / login / logout / order history

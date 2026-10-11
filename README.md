@@ -22,8 +22,9 @@ There is no SPA, no JS framework and no payment gateway. Orders are **Cash on De
 - **Profit & loss**: revenue is counted on delivery, and COGS comes from the cost recorded at
   the time of sale. The report breaks results down by month, by expense category and by
   product. Only superusers can see it.
-- **Point of sale (optional)**: registers and cash sessions, barcode search, sale discounts,
-  split payments (cash, card, bKash, Nagad, Rocket), receipts, voids and a Z-report. POS sales
+- **Point of sale (optional)**: registers and cash sessions, barcode search, sale discounts
+  (as a percentage or an amount), split payments (cash, card, bKash, Nagad, Rocket),
+  adjustments that write off a small unpaid remainder, receipts, voids and a Z-report. POS sales
   go through the same inventory and P&L as online orders. Set `POS_ENABLED=0` to turn it off
   completely.
 
@@ -85,6 +86,12 @@ docker compose up --build -d                                 # rebuild after cha
 docker compose down                                          # stop; add -v to wipe DB and media
 ```
 
+The demo products use real photos from
+[apps/catalog/demo_images/](apps/catalog/demo_images/). They are freely licensed photos from
+Wikimedia Commons, plus book covers from Open Library; sources and licences are in
+[CREDITS.md](apps/catalog/demo_images/CREDITS.md). `seed_demo` swaps the old generated placeholder
+images for these photos, but never touches images you uploaded yourself.
+
 ## Configuration
 
 All settings come from environment variables (see [.env.example](.env.example)). Any new
@@ -108,6 +115,7 @@ variable must be added to both `.env.example` and [docker-compose.yml](docker-co
 | `POS_ENABLED`                 | `1`                         | `0` removes the POS app entirely          |
 | `POS_STORE_NAME` / `_ADDRESS` / `POS_RECEIPT_FOOTER` | —   | Printed on POS receipts                   |
 | `POS_MAX_DISCOUNT_PERCENT`    | `20`                        | Highest discount staff can give (superusers can give up to 100) |
+| `POS_MAX_ADJUSTMENT`          | `50`                        | Largest adjustment staff can make on one sale (no limit for superusers) |
 
 ## Project layout
 

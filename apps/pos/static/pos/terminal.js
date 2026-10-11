@@ -15,6 +15,7 @@
     payments: [],          // split payments already added [{method, amount(cents), reference}]
     method: CASH,
     category: "",
+    discountMode: "percent", // which discount box the cashier typed in last; the other follows it
   };
 
   // ---------------------------------------------------------------- persistence
@@ -132,22 +133,20 @@
     render();
   }
 
-  function discountPercent() {
-    const max = parseFloat(cfg.maxDiscount);
-    let d = parseFloat($("[data-discount]").value) || 0;
-    d = Math.min(Math.max(d, 0), max);
-    return Math.round(d * 100) / 100;
-  }
+  const clamp = (value, low, high) => Math.min(Math.max(value, low), high);
+  const maxPercent100 = () => Math.round(parseFloat(cfg.maxDiscount) * 100);
+  // Discount percentage in hundredths (12.5% -> 1250), clamped to the cashier's limit.
+  const percent100 = () => clamp(Math.round((parseFloat($("[data-discount]").value) || 0) * 100), 0, maxPercent100());
 
+  // All in cents; mirrors the server's rounding (half up) so the totals shown are the totals charged.
   function totals() {
-    const d100 = Math.round(discountPercent() * 100);
-    let subtotal = 0; let total = 0;
-    state.cart.forEach((l) => {
-      const price = toCents(state.products.get(l.id)?.price);
-      subtotal += price * l.qty;
-      total += Math.round((price * (10000 - d100)) / 10000) * l.qty;
-    });
-    return { subtotal, total, discount: subtotal - total };
+    const subtotal = state.cart.reduce((sum, l) => sum + toCents(state.products.get(l.id)?.price) * l.qty, 0);
+    const discount = state.discountMode === "amount"
+      ? clamp(toCents($("[data-discount-value]").value), 0, Math.round((subtotal * maxPercent100()) / 10000))
+      : Math.round((subtotal * percent100()) / 10000);
+    const maxAdjustment = cfg.maxAdjustment === "" ? Infinity : toCents(cfg.maxAdjustment);
+    const adjustment = clamp(toCents($("[data-adjustment]").value), 0, Math.min(subtotal - discount, maxAdjustment));
+    return { subtotal, discount, adjustment, maxAdjustment, total: subtotal - discount - adjustment };
   }
 
   // ---------------------------------------------------------------- payments
@@ -169,12 +168,15 @@
     return entry.amount > 0 ? [...state.payments, entry] : [...state.payments];
   }
 
-  function coverage(due) {
+  function coverage(due, adjustment = 0) {
     const payments = allPayments(due);
     const nonCash = payments.filter((p) => p.method !== CASH).reduce((s, p) => s + p.amount, 0);
     const cash = payments.filter((p) => p.method === CASH).reduce((s, p) => s + p.amount, 0);
     const cashDue = due - nonCash;
-    return { payments, ok: nonCash <= due && cash >= cashDue, change: cash - Math.max(cashDue, 0), short: Math.max(cashDue - cash, 0), overCard: nonCash > due };
+    const change = cash - Math.max(cashDue, 0);
+    // An adjustment only writes off what the customer can't pay; it is never handed back as change.
+    const adjustedChange = adjustment > 0 && cash > cashDue;
+    return { payments, ok: nonCash <= due && cash >= cashDue && !adjustedChange, change, short: Math.max(cashDue - cash, 0), overCard: nonCash > due, adjustedChange };
   }
 
   root.querySelectorAll("[data-method]").forEach((btn) => btn.addEventListener("click", () => {
@@ -245,7 +247,15 @@
 
     $("[data-subtotal]").textContent = fmt(t.subtotal);
     $("[data-discount-amount]").textContent = t.discount ? `−${fmt(t.discount)}` : fmt(0);
+    $("[data-adjustment-row]").hidden = !t.adjustment;
+    $("[data-adjustment-amount]").textContent = `−${fmt(t.adjustment)}`;
     $("[data-total]").textContent = fmt(t.total);
+    // Keep the other discount box in step with the one being typed in.
+    if (state.discountMode === "amount") {
+      $("[data-discount]").value = t.subtotal ? +((t.discount * 100) / t.subtotal).toFixed(2) : 0;
+    } else {
+      $("[data-discount-value]").value = (t.discount / 100).toFixed(2);
+    }
 
     $("[data-payments]").replaceChildren(...state.payments.map((p, i) => {
       const li = document.createElement("li");
@@ -256,16 +266,23 @@
       return li;
     }));
 
-    const cover = coverage(t.total);
+    const cover = coverage(t.total, t.adjustment);
     const changeEl = $("[data-change]");
     changeEl.classList.toggle("hidden", !(cover.ok && cover.change > 0));
     changeEl.textContent = `Change due: ${fmt(cover.change)}`;
     renderQuick(t.total);
+    // Customer is a little short: offer to write the shortfall off as an adjustment.
+    const writeOff = $("[data-write-off]");
+    const canWriteOff = cover.short > 0 && !cover.overCard && t.adjustment + cover.short <= t.maxAdjustment;
+    writeOff.hidden = !canWriteOff;
+    writeOff.textContent = `Write off ${fmt(cover.short)} as adjustment`;
+    writeOff.dataset.amount = t.adjustment + cover.short;
 
     const charge = $("[data-charge]");
     charge.disabled = !state.cart.length || !cover.ok;
     charge.textContent = !state.cart.length ? "Charge"
       : cover.overCard ? "Card / mobile exceeds total"
+      : cover.adjustedChange ? "No change with an adjustment"
       : cover.short ? `Short by ${fmt(cover.short)}`
       : `Charge ${fmt(t.total)}`;
     persist();
@@ -277,14 +294,21 @@
     el.classList.toggle("hidden", !message);
   }
 
-  $("[data-discount]").addEventListener("input", render);
+  $("[data-discount]").addEventListener("input", () => { state.discountMode = "percent"; render(); });
+  $("[data-discount-value]").addEventListener("input", () => { state.discountMode = "amount"; render(); });
+  $("[data-adjustment]").addEventListener("input", render);
+  $("[data-write-off]").addEventListener("click", (event) => {
+    $("[data-adjustment]").value = (event.currentTarget.dataset.amount / 100).toFixed(2);
+    render();
+  });
   amountInput.addEventListener("input", render);
   $("[data-clear]").addEventListener("click", () => { resetSale(); });
 
   function resetSale() {
     state.cart = []; state.payments = [];
     amountInput.value = ""; $("[data-reference]").value = "";
-    $("[data-discount]").value = "0";
+    $("[data-discount]").value = "0"; $("[data-discount-value]").value = "0"; $("[data-adjustment]").value = "0";
+    state.discountMode = "percent";
     $("[data-customer-name]").value = ""; $("[data-customer-phone]").value = "";
     showError("");
     render();
@@ -293,7 +317,7 @@
   // ---------------------------------------------------------------- checkout
   $("[data-charge]").addEventListener("click", async () => {
     const t = totals();
-    const cover = coverage(t.total);
+    const cover = coverage(t.total, t.adjustment);
     if (!cover.ok || !state.cart.length) return;
     const charge = $("[data-charge]");
     charge.disabled = true; charge.textContent = "Processing…";
@@ -304,7 +328,10 @@
         body: JSON.stringify({
           lines: state.cart,
           payments: cover.payments.map((p) => ({ method: p.method, amount: (p.amount / 100).toFixed(2), reference: p.reference })),
-          discount_percent: discountPercent(),
+          ...(state.discountMode === "amount"
+            ? { discount_amount: (t.discount / 100).toFixed(2) }
+            : { discount_percent: (percent100() / 100).toFixed(2) }),
+          adjustment: (t.adjustment / 100).toFixed(2),
           customer_name: $("[data-customer-name]").value,
           customer_phone: $("[data-customer-phone]").value,
         }),

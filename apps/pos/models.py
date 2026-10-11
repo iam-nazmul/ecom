@@ -76,7 +76,8 @@ class Sale(models.Model):
     discount_percent = models.DecimalField(max_digits=5, decimal_places=2, default=ZERO,
                                            validators=[MinValueValidator(ZERO), MaxValueValidator(Decimal("100"))])
     discount_amount = models.DecimalField(**MONEY, default=ZERO)
-    total = models.DecimalField(**MONEY)
+    adjustment = models.DecimalField(**MONEY, default=ZERO, help_text="Written off the amount due; never given as change.")
+    total = models.DecimalField(**MONEY, help_text="Amount charged: subtotal − discount − adjustment.")
     change_given = models.DecimalField(**MONEY, default=ZERO)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.COMPLETED)
     voided_at = models.DateTimeField(null=True, blank=True)
@@ -105,7 +106,7 @@ class SaleLine(models.Model):
     product = models.ForeignKey("catalog.Product", on_delete=models.SET_NULL, null=True, related_name="+", **EXTERNAL)
     product_name = models.CharField(max_length=200)
     list_price = models.DecimalField(**MONEY)
-    unit_price = models.DecimalField(**MONEY, help_text="After discount.")
+    unit_price = models.DecimalField(**MONEY, help_text="Average unit price after discount and adjustment.")
     quantity = models.PositiveIntegerField()
 
     class Meta:

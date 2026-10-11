@@ -97,6 +97,60 @@ class CheckoutTests(PosTestCase):
         sale = checkout(boss_session, self.boss, [(self.pen.pk, 1)], [], discount_percent=D("100"))
         self.assertEqual(sale.total, D("0.00"))
 
+    def items_total(self, sale):
+        return sum((i.unit_price * i.quantity for i in sale.order.items.all()), D("0"))
+
+    def test_discount_by_amount(self):
+        sale = self.sell([(self.pen.pk, 3)], [("cash", D("29"))], discount_amount=D("1"))
+        self.assertEqual((sale.subtotal, sale.discount_amount, sale.discount_percent, sale.total),
+                         (D("30.00"), D("1.00"), D("3.33"), D("29.00")))
+        # 29.00 / 3 doesn't divide evenly: the order gets 9.66 + 2 × 9.67 so it still adds up.
+        self.assertEqual(sorted((i.quantity, i.unit_price) for i in sale.order.items.all()),
+                         [(1, D("9.66")), (2, D("9.67"))])
+        self.assertEqual(self.items_total(sale), D("29.00"))
+        self.pen.refresh_from_db()
+        self.assertEqual(self.pen.stock, 17)
+        self.assertEqual(profit_and_loss(timezone.localdate(), timezone.localdate()).totals.revenue, D("29.00"))
+
+    def test_discount_amount_limits(self):
+        for amount in (D("7"), D("-1")):  # 7 > 20% of 30
+            with self.assertRaises(PosError):
+                self.sell([(self.pen.pk, 3)], [("cash", D("30"))], discount_amount=amount)
+        boss_session = open_session(Register.objects.create(name="Back office"), self.boss)
+        with self.assertRaises(PosError):
+            checkout(boss_session, self.boss, [(self.pen.pk, 1)], [], discount_amount=D("11"))
+        self.assertEqual(checkout(boss_session, self.boss, [(self.pen.pk, 1)], [], discount_amount=D("10")).total, D("0.00"))
+
+    def test_adjustment_reduces_amount_due_and_revenue(self):
+        sale = self.sell([(self.pen.pk, 3), (self.book.pk, 1)], [("cash", D("70"))],
+                         discount_percent=D("10"), adjustment=D("2"))
+        self.assertEqual((sale.subtotal, sale.discount_amount, sale.adjustment, sale.total, sale.change_given),
+                         (D("80.00"), D("8.00"), D("2.00"), D("70.00"), D("0.00")))
+        self.assertEqual((sale.order.total, self.items_total(sale)), (D("70.00"), D("70.00")))
+        report = profit_and_loss(timezone.localdate(), timezone.localdate())
+        self.assertEqual(report.totals.revenue, D("70.00"))
+        summary = session_summary(self.session)
+        self.assertEqual((summary["gross"], summary["discounts"], summary["adjustments"], summary["net"]),
+                         (D("80.00"), D("8.00"), D("2.00"), D("70.00")))
+        self.assertEqual(summary["expected_cash"], D("170.00"))  # only the cash actually taken
+
+    def test_adjustment_is_never_given_as_change(self):
+        with self.assertRaises(PosError):
+            self.sell([(self.book.pk, 1)], [("cash", D("50"))], adjustment=D("2"))  # would give 2 change
+        sale = self.sell([(self.book.pk, 1)], [("bkash", D("20"), "BK"), ("cash", D("28"))], adjustment=D("2"))
+        self.assertEqual((sale.total, sale.change_given), (D("48.00"), D("0.00")))
+
+    @override_settings(POS_MAX_ADJUSTMENT=D("5"))
+    def test_adjustment_limits(self):
+        for amount in (D("6"), D("-1")):
+            with self.assertRaises(PosError):
+                self.sell([(self.book.pk, 1)], [("cash", D("44"))], adjustment=amount)
+        boss_session = open_session(Register.objects.create(name="Back office"), self.boss)
+        with self.assertRaises(PosError):  # more than the amount due
+            checkout(boss_session, self.boss, [(self.pen.pk, 1)], [], discount_percent=D("50"), adjustment=D("6"))
+        sale = checkout(boss_session, self.boss, [(self.book.pk, 1)], [("cash", D("40"))], adjustment=D("10"))
+        self.assertEqual(sale.total, D("40.00"))
+
     def test_rejections_write_nothing(self):
         cases = [
             ([(self.pen.pk, 1)], [("cash", D("5"))]),                  # short
@@ -189,6 +243,20 @@ class PosViewTests(PosTestCase):
         }), content_type="application/json")
         self.assertEqual(bad.status_code, 400)
         self.assertIn("short", bad.json()["error"])
+
+    def test_checkout_api_discount_amount_and_adjustment(self):
+        self.client.force_login(self.cashier)
+        data = self.client.post(reverse("pos:api_checkout"), json.dumps({
+            "lines": [{"id": self.book.pk, "qty": 2}], "payments": [{"method": "cash", "amount": "88"}],
+            "discount_amount": "10", "adjustment": "2",
+        }), content_type="application/json").json()
+        self.assertTrue(data["ok"], data)
+        self.assertEqual((data["total"], data["change"]), ("88.00", "0.00"))
+        sale = Sale.objects.get()
+        self.assertEqual((sale.discount_percent, sale.adjustment), (D("10.00"), D("2.00")))
+        receipt = self.client.get(data["receipt_url"])
+        self.assertContains(receipt, "Discount (10.0%)")
+        self.assertContains(receipt, "Adjustment")
 
     def test_pages_render(self):
         self.sell([(self.pen.pk, 1)], [("cash", D("10"))])

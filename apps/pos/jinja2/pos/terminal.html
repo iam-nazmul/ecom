@@ -12,6 +12,7 @@
        data-csrf="{{ csrf_token }}"
        data-currency="{{ currency }}"
        data-max-discount="{{ max_discount }}"
+       data-max-adjustment="{{ '' if max_adjustment is none else max_adjustment }}"
        data-storage-key="pos-cart-{{ session.pk }}">
 
     {# ---------------- Products ---------------- #}
@@ -52,12 +53,15 @@
             <label class="text-xs text-gray-600">Phone<input data-customer-phone class="input mt-1" maxlength="30" inputmode="tel"></label>
             <label class="text-xs text-gray-600">Discount % <span class="text-gray-400">(max {{ max_discount|int }})</span>
               <input data-discount type="number" min="0" max="{{ max_discount }}" step="0.5" value="0" class="input mt-1" inputmode="decimal"></label>
+            <label class="text-xs text-gray-600">Discount amount
+              <input data-discount-value type="number" min="0" step="0.01" value="0" class="input mt-1" inputmode="decimal"></label>
           </div>
         </details>
 
         <dl class="space-y-1">
           <div class="flex justify-between text-gray-600"><dt>Subtotal</dt><dd data-subtotal class="tabular-nums">—</dd></div>
           <div class="flex justify-between text-gray-600"><dt>Discount</dt><dd data-discount-amount class="tabular-nums">—</dd></div>
+          <div data-adjustment-row hidden class="flex justify-between text-gray-600"><dt>Adjustment</dt><dd data-adjustment-amount class="tabular-nums">—</dd></div>
           <div class="flex justify-between text-xl font-bold"><dt>Total</dt><dd data-total class="tabular-nums">—</dd></div>
         </dl>
 
@@ -76,8 +80,12 @@
               <input data-reference class="input mt-1" maxlength="100"></label>
           </div>
           <div data-quick class="mt-2 flex flex-wrap gap-1"></div>
+          <label class="mt-2 block text-xs text-gray-600">Adjustment
+            <span class="text-gray-400">(written off the amount due, never given as change{% if max_adjustment is not none %}; max {{ max_adjustment|money }}{% endif %})</span>
+            <input data-adjustment type="number" min="0" step="0.01" value="0" class="input mt-1" inputmode="decimal"></label>
           <button type="button" data-add-payment class="btn-link mt-2 text-xs">+ Split payment</button>
           <ul data-payments class="mt-2 space-y-1"></ul>
+          <button type="button" data-write-off hidden class="btn-link mt-2 text-xs"></button>
           <p data-change class="mt-2 hidden rounded-lg bg-green-50 px-3 py-2 text-sm font-semibold text-green-800"></p>
         </div>
 

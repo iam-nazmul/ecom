@@ -53,6 +53,7 @@
                   <td class="px-3 py-3 text-right font-semibold tabular-nums">
                     {{ sale.total|money }}
                     {% if sale.discount_amount %}<span class="block text-xs font-normal text-gray-500">−{{ sale.discount_amount|money }} ({{ sale.discount_percent|float }}%)</span>{% endif %}
+                    {% if sale.adjustment %}<span class="block text-xs font-normal text-gray-500">−{{ sale.adjustment|money }} adj.</span>{% endif %}
                   </td>
                   <td class="px-5 py-3 text-right whitespace-nowrap">
                     <a href="{{ url('pos:receipt', sale.pk) }}?print=1" target="_blank" class="btn btn-secondary px-3 py-1.5">Receipt</a>

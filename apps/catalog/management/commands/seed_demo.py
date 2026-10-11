@@ -1,7 +1,9 @@
 import random
+import re
 from datetime import timedelta
 from decimal import Decimal
 from io import BytesIO
+from pathlib import Path
 
 from django.core.files.base import ContentFile
 from django.contrib.auth import get_user_model
@@ -16,7 +18,9 @@ from apps.orders.models import Order, OrderItem
 from apps.inventory.demo import DEMO_ORDER_NOTE, seed_inventory
 from apps.reviews.models import Review
 
-IMAGES_PER_PRODUCT = 3
+IMAGES_PER_PRODUCT = 3  # generated placeholders, for products without a photo
+# Real photos, one per product, named <slug>.jpg (sources and licences in CREDITS.md there).
+DEMO_PHOTOS = Path(__file__).resolve().parents[2] / "demo_images"
 PALETTES = [
     ((79, 70, 229), (167, 139, 250)),
     ((225, 29, 72), (251, 146, 60)),
@@ -272,11 +276,44 @@ def demo_image(product, index, size=800):
     return ContentFile(buffer.getvalue(), name=f"{product.slug}-{index + 1}.jpg")
 
 
+def demo_photo(product):
+    path = DEMO_PHOTOS / f"{product.slug}.jpg"
+    return ContentFile(path.read_bytes(), name=path.name) if path.is_file() else None
+
+
+def is_placeholder(product_image):
+    """True for an image made by demo_image() (named <slug>-<n>.jpg, maybe with Django's suffix)."""
+    name = Path(product_image.image.name).name
+    return re.fullmatch(rf"{re.escape(product_image.product.slug)}-\d+(_[A-Za-z0-9]{{7}})?\.jpg", name) is not None
+
+
+def seed_images(product):
+    """Give a demo product its photo, or generated placeholders when there is none.
+
+    Placeholders from earlier runs are swapped for the photo; any other image (e.g. one
+    uploaded in the admin) means the gallery is left alone. Returns the number of images added.
+    """
+    if product.image:
+        return 0
+    photo = demo_photo(product)
+    existing = list(product.images.all())
+    if existing and (photo is None or not all(is_placeholder(i) for i in existing)):
+        return 0
+    for old in existing:
+        old.delete()  # also removes the file
+    if photo:
+        ProductImage.objects.create(product=product, image=photo, alt_text=product.name, sort_order=0)
+        return 1
+    for index in range(IMAGES_PER_PRODUCT):
+        ProductImage.objects.create(product=product, image=demo_image(product, index), sort_order=index)
+    return IMAGES_PER_PRODUCT
+
+
 class Command(BaseCommand):
     help = "Create demo categories, products and gallery images (idempotent)."
 
     def add_arguments(self, parser):
-        parser.add_argument("--no-images", action="store_true", help="Skip generating gallery images.")
+        parser.add_argument("--no-images", action="store_true", help="Skip adding gallery images.")
 
     def handle(self, *args, no_images=False, **options):
         created = images = reviews = 0
@@ -314,10 +351,8 @@ class Command(BaseCommand):
                 if not product.reviews.exists():
                     seed_reviews(product, reviewers)
                     reviews += product.reviews.count()
-                if not no_images and not product.image and not product.images.exists():
-                    for index in range(IMAGES_PER_PRODUCT):
-                        ProductImage.objects.create(product=product, image=demo_image(product, index), sort_order=index)
-                        images += 1
+                if not no_images:
+                    images += seed_images(product)
         orders = seed_delivered_orders(reviewers)
         demo_slugs = [slugify(name) for products in CATALOG.values() for name, *_ in products]
         inventory = seed_inventory(demo_slugs)

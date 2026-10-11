@@ -51,6 +51,7 @@
     <table>
       <tr><td>Subtotal</td><td class="r">{{ sale.subtotal|money }}</td></tr>
       {% if sale.discount_amount %}<tr><td>Discount ({{ sale.discount_percent|float }}%)</td><td class="r">−{{ sale.discount_amount|money }}</td></tr>{% endif %}
+      {% if sale.adjustment %}<tr><td>Adjustment</td><td class="r">−{{ sale.adjustment|money }}</td></tr>{% endif %}
       <tr class="total"><td>TOTAL</td><td class="r">{{ sale.total|money }}</td></tr>
     </table>
     <hr>

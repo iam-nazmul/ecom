@@ -175,15 +175,25 @@ block deleting products, orders or users. POS tests skip themselves when the app
 RegisterSession (register, opened by/at, opening cash, closed by/at, expected & counted cash,
 note; one open session per register, one per user); Sale (`S-000001`; session, linked
 `orders.Order`, cashier, optional customer name/phone, subtotal at list price, discount %
-and amount, total, change, status completed/voided + who/when/why); SaleLine (product
-snapshot, list price, discounted unit price, qty); Payment (cash, card, bKash, Nagad, Rocket;
+and amount, adjustment, total charged, change, status completed/voided + who/when/why);
+SaleLine (product snapshot, list price, average unit price after discount/adjustment, qty); Payment (cash, card, bKash, Nagad, Rocket;
 amount applied, amount received, reference); CashMovement (in/out with reason); Barcode
 (product, unique code).
 
 **Selling.** Staff only. Prices come from the database, never the browser. Sale-level
-discount % (staff ≤ `POS_MAX_DISCOUNT_PERCENT`, default 20; superusers ≤ 100), unit price =
-list × (1 − d) rounded to 0.01. Split tenders; card/mobile may not exceed the total; cash may
-(change given). One transaction locks the session and products, checks stock/active status,
+discount entered as a **percentage or an amount** (the terminal fills in the other one);
+discount amount = subtotal × % rounded half-up to 0.01, or the amount given (% stored =
+amount ÷ subtotal). Limit: staff ≤ `POS_MAX_DISCOUNT_PERCENT` of the subtotal (default 20),
+superusers ≤ 100%.
+**Adjustment**: an amount written off what the customer owes (e.g. rounding off, a customer a
+few taka short). It reduces the amount due, is **never given as change** — a sale with an
+adjustment must be paid exactly, with no change — and can't exceed the amount due. Staff ≤
+`POS_MAX_ADJUSTMENT` per sale (default 50); superusers unlimited. The terminal offers "Write
+off X as adjustment" when the payment is short.
+Total charged = subtotal − discount − adjustment. Discount + adjustment are spread over the
+lines in proportion to line value (to the cent); a line that doesn't divide evenly by its
+quantity becomes two order items one cent apart, so order items always add up to the total.
+Split tenders; card/mobile may not exceed the total; cash may (change given). One transaction locks the session and products, checks stock/active status,
 then creates a **Delivered** `Order` ("Walk-in customer", no shipping) + items and calls
 `inventory.record_sale()` — so stock ledger, COGS and P&L include POS sales automatically.
 Any failure writes nothing.
@@ -192,13 +202,17 @@ Any failure writes nothing.
 open; reason required) cancels the linked order — the inventory app restocks it and the P&L
 drops it. Voided sales are excluded from session totals.
 
+**Accounting.** The linked order's total is the amount charged, so P&L revenue is net of
+discounts and adjustments; neither is booked as an expense. Adjustments aren't cash, so they
+don't change expected cash.
+
 **Cash & close.** Expected cash = opening float + cash sales + cash in − cash out. Closing
 records the counted cash and stores expected/over/short; a Z-report shows completed sales,
-gross, discounts, net, voids, totals by payment method and the cash reconciliation.
+gross, discounts, adjustments, net, voids, totals by payment method and the cash reconciliation.
 
 **Pages** (`/pos/`): open register → terminal (search/scan by name, barcode, slug or ID;
-category filter; product grid with stock; cart with qty controls; customer & discount; payment
-methods with quick cash amounts and split payments; change due; completion dialog with
+category filter; product grid with stock; cart with qty controls; customer & discount (% or
+amount); payment methods with quick cash amounts, split payments and adjustment; change due; completion dialog with
 receipt) · Sales (session list, receipts, void) · Cash drawer · Close register · Z-report
 (`/pos/sessions/<id>/`, own sessions or superuser) · 80 mm printable receipt
 (`/pos/sales/<id>/receipt/`, `?print=1` auto-prints) · JSON API `api/products/`,
@@ -206,7 +220,7 @@ receipt) · Sales (session list, receipts, void) · Cash drawer · Close registe
 sales, cash movements (read-only).
 
 **Settings.** `POS_ENABLED`, `POS_STORE_NAME`, `POS_STORE_ADDRESS`, `POS_RECEIPT_FOOTER`,
-`POS_MAX_DISCOUNT_PERCENT`.
+`POS_MAX_DISCOUNT_PERCENT`, `POS_MAX_ADJUSTMENT`.
 
 ## 5. Pricing rules
 

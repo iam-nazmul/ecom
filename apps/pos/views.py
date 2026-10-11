@@ -16,7 +16,7 @@ from apps.catalog.models import Category, Product
 
 from .models import CashMovement, Payment, Register, RegisterSession, Sale
 from .services import (
-    PosError, add_cash_movement, can_void, checkout, close_session, current_session, max_discount_for,
+    PosError, add_cash_movement, can_void, checkout, close_session, current_session, max_adjustment_for, max_discount_for,
     open_session, session_summary, void_sale,
 )
 
@@ -50,6 +50,7 @@ def terminal(request):
         "categories": Category.objects.filter(is_active=True),
         "methods": Payment.Method.choices,
         "max_discount": max_discount_for(request.user),
+        "max_adjustment": max_adjustment_for(request.user),
         "currency": settings.CURRENCY_SYMBOL,
     })
 
@@ -104,6 +105,8 @@ def api_checkout(request):
             lines=[(line["id"], line["qty"]) for line in data.get("lines", [])],
             payments=[(p.get("method"), _decimal(p.get("amount", "0")), p.get("reference", "")) for p in data.get("payments", [])],
             discount_percent=_decimal(data.get("discount_percent", "0")),
+            discount_amount=_decimal(data["discount_amount"]) if data.get("discount_amount") not in (None, "") else None,
+            adjustment=_decimal(data.get("adjustment", "0")),
             customer_name=str(data.get("customer_name", ""))[:150],
             customer_phone=str(data.get("customer_phone", ""))[:30],
         )

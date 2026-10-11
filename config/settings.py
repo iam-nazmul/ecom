@@ -156,3 +156,4 @@ POS_STORE_NAME = os.environ.get("POS_STORE_NAME", "Ecom Store")
 POS_STORE_ADDRESS = os.environ.get("POS_STORE_ADDRESS", "Dhaka, Bangladesh")
 POS_RECEIPT_FOOTER = os.environ.get("POS_RECEIPT_FOOTER", "Thank you for shopping with us!")
 POS_MAX_DISCOUNT_PERCENT = Decimal(os.environ.get("POS_MAX_DISCOUNT_PERCENT", "20"))  # superusers: up to 100
+POS_MAX_ADJUSTMENT = Decimal(os.environ.get("POS_MAX_ADJUSTMENT", "50"))  # per sale; superusers: no limit
