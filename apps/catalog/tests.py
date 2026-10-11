@@ -76,6 +76,31 @@ def upload(name="photo.png", color="red"):
     return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
 
 
+class ProductCardAddToCartTests(TestCase):
+    def setUp(self):
+        self.widget = make_product(name="Blue Widget", slug="blue-widget", stock=3)
+        self.gone = make_product(name="Gone Widget", slug="gone-widget", stock=0)
+
+    def test_each_card_has_add_to_cart(self):
+        for url in (reverse("catalog:product_list"), reverse("core:home")):
+            html = self.client.get(url).content.decode()
+            self.assertIn(f'action="{reverse("cart:add", args=[self.widget.pk])}"', html)
+            self.assertIn("Add Blue Widget to cart", html)
+        html = self.client.get(reverse("catalog:product_list")).content.decode()
+        card = html[html.index('id="product-%d"' % self.gone.pk):]
+        card = card[:card.index("</form>")]
+        self.assertIn("disabled>Sold out", card)
+    def test_add_from_list_returns_to_same_page_and_card(self):
+        list_url = reverse("catalog:product_list") + "?sort=price_asc&q=widget"
+        html = self.client.get(list_url).content.decode()
+        self.assertIn(f'value="{list_url.replace("&", "&amp;")}#product-{self.widget.pk}"', html)
+        response = self.client.post(reverse("cart:add", args=[self.widget.pk]),
+                                     {"quantity": "1", "next": f"{list_url}#product-{self.widget.pk}"})
+        self.assertRedirects(response, f"{list_url}#product-{self.widget.pk}", fetch_redirect_response=False)
+        self.assertEqual(self.client.session["cart"], {str(self.widget.pk): 1})
+        self.assertContains(self.client.get(list_url), "Added Blue Widget to your cart.")
+
+
 class GalleryTests(TestCase):
     def setUp(self):
         media_root = tempfile.mkdtemp()

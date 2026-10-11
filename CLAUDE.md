@@ -54,7 +54,9 @@ The Docker image builds the CSS itself in a Node stage, so `npm` is not needed t
   `{% url %}` or `{% csrf_token %}`. Use the globals defined in `config/jinja2.py`:
   `url('ns:name', arg, kw=val)`, `static('path')`, `get_messages(request)`, `get_cart(request)`,
   `query_with(request, page=2)`, and the `money` filter. Forms use `{{ csrf_input }}`.
-  Reuse `template/macros/forms.html` and `template/macros/product.html`.
+  Reuse `template/macros/forms.html` and `template/macros/product.html`. Product cards contain
+  an Add to cart form, so import that file **with context**:
+  `{% import "macros/product.html" as p with context %}`.
 - The Django admin still uses Django templates; that's why `TEMPLATES` has a second
   `DjangoTemplates` backend. Don't remove it.
 - Money is always `Decimal`; never use float. Pricing rules live in `apps/orders/services.py`

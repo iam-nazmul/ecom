@@ -64,22 +64,40 @@
   {% endif %}
 {% endmacro %}
 
+{# Product card with an Add to cart button. Needs the page context (request, csrf_input):
+   import with `{% import "macros/product.html" as p with context %}`. #}
 {% macro card(product) %}
-  <a href="{{ product.get_absolute_url() }}" class="group card flex flex-col overflow-hidden transition hover:shadow-md">
-    <div class="relative overflow-hidden">
-      <div class="transition duration-300 group-hover:scale-105">{{ image(product) }}</div>
-      <div class="absolute top-3 left-3 flex gap-1.5">
-        {% if product.on_sale %}<span class="badge bg-rose-600 text-white">-{{ product.discount_percent }}%</span>{% endif %}
-        {% if not product.in_stock %}<span class="badge bg-gray-900 text-white">Sold out</span>{% endif %}
+  <div id="product-{{ product.pk }}" class="group card flex scroll-mt-24 flex-col overflow-hidden transition hover:shadow-md">
+    <a href="{{ product.get_absolute_url() }}" class="flex flex-1 flex-col focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600">
+      <div class="relative overflow-hidden">
+        <div class="transition duration-300 group-hover:scale-105">{{ image(product) }}</div>
+        <div class="absolute top-3 left-3 flex gap-1.5">
+          {% if product.on_sale %}<span class="badge bg-rose-600 text-white">-{{ product.discount_percent }}%</span>{% endif %}
+          {% if not product.in_stock %}<span class="badge bg-gray-900 text-white">Sold out</span>{% endif %}
+        </div>
       </div>
-    </div>
-    <div class="flex flex-1 flex-col gap-1 p-4">
-      <p class="text-xs font-medium tracking-wide text-gray-500 uppercase">{{ product.category.name }}</p>
-      <h3 class="line-clamp-2 font-medium text-gray-900 group-hover:text-brand-600">{{ product.name }}</h3>
-      {{ r.card_rating(product) }}
-      <div class="mt-auto pt-2">{{ price(product) }}</div>
-    </div>
-  </a>
+      <div class="flex flex-1 flex-col gap-1 p-4 pb-3">
+        <p class="text-xs font-medium tracking-wide text-gray-500 uppercase">{{ product.category.name }}</p>
+        <h3 class="line-clamp-2 font-medium text-gray-900 group-hover:text-brand-600">{{ product.name }}</h3>
+        {{ r.card_rating(product) }}
+        <div class="mt-auto pt-2">{{ price(product) }}</div>
+      </div>
+    </a>
+    <form action="{{ url('cart:add', product.pk) }}" method="post" class="px-4 pb-4">
+      {{ csrf_input }}
+      <input type="hidden" name="quantity" value="1">
+      {# Come back to this card on the same page (keeps filters, sort and page). #}
+      <input type="hidden" name="next" value="{{ request.get_full_path() }}#product-{{ product.pk }}">
+      {% if product.in_stock %}
+        <button type="submit" class="btn btn-primary w-full py-2" aria-label="Add {{ product.name }} to cart">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+          Add to cart
+        </button>
+      {% else %}
+        <button type="button" class="btn btn-secondary w-full py-2" disabled>Sold out</button>
+      {% endif %}
+    </form>
+  </div>
 {% endmacro %}
 
 {% macro grid(products) %}
